@@ -81,8 +81,8 @@ export class Player {
     const speed = PLAYER.speed * st.speed * (heavy ? PLAYER.carrySpeedHeavy : 1) * (this.crouch && this.grounded ? 0 : 1);
     const ax = (inp && this.stun <= 0) ? inp.axisX : 0;
     // crouch / hide
-    this.crouch = !!(inp && inp.down && this.grounded && this.stun <= 0);
-    this.hidden = this.crouch && this.carry && this.carry.kind !== 'apple' && this.carry.kind !== 'ball';
+    this.crouch = !!(inp && inp.down && this.grounded && this.stun <= 0 && !(this.carry && ['apple', 'nut', 'ball'].includes(this.carry.kind))); /* only a crate can be ducked under */
+    this.hidden = this.crouch && this.carry && this.carry.kind !== 'apple' && this.carry.kind !== 'ball' && this.carry.kind !== 'nut'; /* only a crate makes a hiding box */
     if (this.crouch && this.carry) this.carry.shield = true; else if (this.carry) this.carry.shield = false;
     // horizontal motion
     const target = ax * speed; const acc = (this.grounded ? PLAYER.accel : PLAYER.airAccel) * dt;
@@ -90,7 +90,7 @@ export class Player {
     if (ax !== 0 && !this.crouch) this.facing = ax > 0 ? 1 : -1;
     // jump
     if (this.grounded) this.coyote = 0.1; else this.coyote -= dt;
-    const jumpV = PLAYER.jumpV * st.jump * (heavy ? PLAYER.carryJumpHeavy : 1);
+    const jumpV = PLAYER.jumpV * (level.original ? 1 : st.jump) * (heavy ? PLAYER.carryJumpHeavy : 1); /* original zones: every Ranger jumps like the NES hero */
     if (inp && inp.jumpPressed && this.stun <= 0) {
       if (inp.down && this.grounded && this.canDropThrough(level)) { this.dropThrough = true; this.y -= 0.1; this.grounded = false; }
       else if (this.coyote > 0) { this.vy = jumpV; this.grounded = false; this.coyote = 0; this.jumpHeld = true; w.sfx(SFX.jump); }
@@ -288,11 +288,12 @@ export class Enemy {
     }
     const w = this.world; const target = w.nearestPlayer(this.x, this.y);
     const dxp = target ? target.x - this.x : 0; const dist = Math.abs(dxp);
-    if (this.type === 'mechdog' && level.original) { // NES: sits until the hero comes within ~7 tiles, then runs at him (1.25 px/frame), jumps over
+    if ((this.type === 'mechdog' || this.type === 'mechmouse') && level.original) { // NES: sits until the hero comes within ~7 tiles, then runs at him (1.25 px/frame), jumps over
       // crates and steps, never turns and leaves the screen
-      if (this.state !== 'run') { this.vx = 0; if (target && dist < 7.2 && Math.abs(target.y - this.y) < 7) { this.state = 'run'; this.dir = dxp > 0 ? 1 : -1; } }
-      else { this.vx = this.dir * 4.7; const ax = this.x + this.dir * (this.w / 2 + 0.25); if (this.grounded && (level.solidAtWorld(ax, this.y + 0.5) || w.solidBodyAt(ax, this.y + 0.5))) this.vy = 18.6; }
-      moveBody(level, this, dt, w); if (this.hitWall && this.grounded) this.vy = 18.6; this.hitWall = 0;
+      const mouse = this.type === 'mechmouse', run = mouse ? 5.6 : 4.7, hop = mouse ? 15 : 18.6, sight = mouse ? 8.5 : 7.2; /* mice: 1.5 px/frame, dogs 1.25 */
+      if (this.state !== 'run') { this.vx = 0; if (target && dist < sight && Math.abs(target.y - this.y) < 7) { this.state = 'run'; this.dir = dxp > 0 ? 1 : -1; } }
+      else { this.vx = this.dir * run; const ax = this.x + this.dir * (this.w / 2 + 0.25); if (this.grounded && (level.solidAtWorld(ax, this.y + 0.5) || w.solidBodyAt(ax, this.y + 0.5))) this.vy = hop; }
+      moveBody(level, this, dt, w); if (this.hitWall && this.grounded) this.vy = hop; this.hitWall = 0;
       if (this.state === 'run' && Math.abs(this.x - w.camX) > 13) this.dead = true;
       if (this.y < -3) this.dead = true;
       this.mesh.position.set(this.x, this.y, 0.05); this.mesh.rotation.y = this.dir > 0 ? -0.35 : Math.PI + 0.35; this.mesh.rotation.z = this.hurtT > 0 ? Math.sin(this.t * 60) * 0.2 : 0;
@@ -324,7 +325,6 @@ export class Enemy {
       const spd = this.state === 'charge' ? this.speed * 3.5 : this.speed;
       if (this.state === 'charge' && this.timer <= 0) this.state = 'idle';
       this.vx = this.dir * spd;
-      if (this.type === 'mechmouse' && this.grounded) this.vy = 12.4; // NES mice hop continuously (~18 px hops)
       if (this.type === 'pirat' && target && dist < 5 && this.state !== 'charge') this.dir = dxp > 0 ? 1 : -1;
       moveBody(level, this, dt, w);
       if (this.hitWall) { this.dir *= -1; this.hitWall = 0; if (this.state === 'charge') this.state = 'idle'; }
@@ -420,7 +420,7 @@ export class Boss {
       case 'nimmech': { this.vx = this.dir * 1.8; moveBody(level, this, dt, null); if (this.hitWall || this.x < this.arenaL + 2 || this.x > this.arenaR - 2) { this.dir *= -1; this.hitWall = 0; } this.walking = true; if (this.timer <= 0) { this.attack = true; for (const s of [-1, 1]) w.spawnProjectile(this.x + s * 1.7, this.y + 1.2, s * 5, 1, 'lightning'); if (this.phase++ % 3 === 2) w.spawnProjectile(this.x, this.y + 6, 0, 0, 'ironball'); this.timer = 1.6; } break; }
     }
     this.x = Math.max(this.arenaL, Math.min(this.arenaR, this.x));
-    this.mesh.position.set(this.x, this.y, 0);
+    this.mesh.position.set(this.x, this.y, this.type === 'brusher' && w.level.original ? -1.8 : 0); /* the zone 0 robot stands behind the play line */
     if (!['caterpillar', 'dinoskel', 'python', 'sewernose'].includes(this.type) && !(this.type === 'brusher' && w.level.original)) this.mesh.rotation.y = this.dir > 0 ? Math.PI / 2 - 1.2 : -Math.PI / 2 + 1.2;
     animateBoss(this.mesh, dt, this.t, { attack: this.attack, hurt: this.hurtT > 0, walking: this.walking });
   }

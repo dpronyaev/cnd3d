@@ -2,6 +2,7 @@
 // Two sources: generated recipe levels (theme materials) and original ripped levels (per-cell colours from the ROM data).
 import * as THREE from 'three';
 import { T, ITEM_CHARS, ENEMY_CHARS } from './constants.js';
+import { SURFACE_KINDS, MODEL_KINDS, surfaceMaterial, buildProp } from './props.js';
 import { THEMES, makeThemeMaterials, buildBackground, TEX } from './themes.js';
 
 export const TILE_SOLID = 1, TILE_ALT = 2, TILE_PLAT = 3, TILE_WALL = 4, TILE_SPIKES = 5, TILE_WATER = 6, TILE_PILLAR = 7, TILE_LEAF = 8, TILE_VOID = 9, TILE_KILL = 10, TILE_JET = 11, TILE_DOOR = 12;
@@ -123,42 +124,64 @@ export class Level {
     const lift = (v) => Math.min(255, Math.round(Math.pow(v / 255, 0.95) * 255));
     const quant = (hex) => { const n = parseInt(hex.slice(1), 16); const q = (v) => Math.min(255, Math.round(lift(v) / 20) * 20); return ((q(n >> 16) << 16) | (q((n >> 8) & 255) << 8) | q(n & 255)).toString(16).padStart(6, '0'); };
     const groups = { solid: new Map(), plat: new Map(), back: new Map() };
+    const skyQ = def.sky ? quant(def.sky) : null; /* cells painted in the sky colour are simply sky */
     const add = (kind, key, tx, ty) => { const g = groups[kind]; if (!g.has(key)) g.set(key, []); g.get(key).push([tx, ty]); };
     const spikes = [], water = [], voids = [];
     const locked = new Map(); for (const d of this.spawns.doors) if (d.lock) locked.set(d.tx + ',' + d.ty, d);
+    // prop kinds per cell (what the NES block shows): surfaces get their own textured material, objects become 3D models
+    const kindAt = (tx, ty) => { if (!def.kcells || ty < 0 || ty >= this.height || tx < 0 || tx >= this.width) return null; const c = def.kcells[ty].charCodeAt(tx) - 65; return c >= 0 ? def.kinds[c] : null; };
+    const modelCells = {};
+    const backKey = (nx, ny) => { const nc = def.cells[ny][nx]; const k = kindAt(nx, ny); if (k && MODEL_KINDS.has(k)) return null; if (k && SURFACE_KINDS.has(k)) return 's:' + k; return nc !== skyId && density[nc] > 0.04 && quant(colors[nc]) !== skyQ ? quant(colors[nc]) : null; };
+    const paintBehind = (tx, ty) => { // backdrop for cells covered by a model (item, enemy, prop): copy a neighbouring background cell
+      for (const [nx, ny] of [[tx - 1, ty], [tx + 1, ty], [tx, ty - 1], [tx - 2, ty], [tx + 2, ty], [tx, ty + 1], [tx - 3, ty], [tx + 3, ty]]) {
+        if (nx < 0 || ny < 0 || nx >= this.width || ny >= this.height) continue; const ch = this.rows[ny][nx], nc = def.cells[ny][nx];
+        if (this.grid[ny * this.width + nx] !== 0 || ITEM_CHARS.has(ch) || ENEMY_CHARS[ch] || nc < 0) continue; const k = kindAt(nx, ny); if (k && MODEL_KINDS.has(k)) continue;
+        const bk = backKey(nx, ny); if (bk) add('back', bk, tx, ty); return;
+      }
+    };
     const bs = def.bossScreen; const inBossRoom = (tx, ty) => bs && Math.floor(tx / 16) === bs[0] && Math.floor(ty / 16) === bs[1]; // the boss is a 3D model there: do not paint its picture
     for (let ty = 0; ty < this.height; ty++) for (let tx = 0; tx < this.width; tx++) {
       const g = this.grid[ty * this.width + tx]; const cid = def.cells[ty][tx];
       if (g === TILE_VOID) { voids.push([tx, ty]); continue; }
       if (cid < 0) continue;
-      const col = colors[cid]; const key = quant(col);
+      const pk = kindAt(tx, ty);
+      if (pk && MODEL_KINDS.has(pk) && !locked.has(tx + ',' + ty)) { (modelCells[pk] = modelCells[pk] || []).push([tx, ty]); paintBehind(tx, ty); continue; }
+      const col = colors[cid]; const key = pk && SURFACE_KINDS.has(pk) ? 's:' + pk : quant(col);
       const ld = locked.get(tx + ',' + ty);
       if (ld) { const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: new THREE.Color('#' + key), map: TEX.planks('#ffffff', '#e2e2e2'), roughness: 0.85 })); m.position.set(tx + 0.5, this.rowY(ty) + 0.5, 0); m.castShadow = true; this.group.add(m); (ld.cover = ld.cover || []).push(m); continue; }
-      if (g === TILE_SOLID || g === TILE_ALT) add(density[cid] < 0.3 ? 'plat' : 'solid', key, tx, ty); // thinly drawn solid cells (wires) look like ledges
+      if (g === TILE_SOLID || g === TILE_ALT) add(density[cid] < 0.3 && !key.startsWith('s:') ? 'plat' : 'solid', key, tx, ty); // thinly drawn solid cells (wires) look like ledges
       else if (g === TILE_PLAT) { add('plat', key, tx, ty); if (density[cid] > 0.45) add('back', key, tx, ty); } // the ledge + its painted cell behind (thin wires stay thin)
       else if (g === TILE_SPIKES) spikes.push([tx, ty]);
       else if (g === TILE_WATER) water.push([tx, ty]);
-      else if (ITEM_CHARS.has(this.rows[ty][tx]) || ENEMY_CHARS[this.rows[ty][tx]]) { // items/enemies are models: paint the backdrop that surrounds them instead
-        for (const [nx, ny] of [[tx - 1, ty], [tx + 1, ty], [tx, ty - 1], [tx - 2, ty], [tx + 2, ty], [tx, ty + 1]]) {
-          if (nx < 0 || ny < 0 || nx >= this.width || ny >= this.height) continue; const ch = this.rows[ny][nx], nc = def.cells[ny][nx];
-          if (this.grid[ny * this.width + nx] !== 0 || ITEM_CHARS.has(ch) || ENEMY_CHARS[ch] || nc < 0) continue;
-          if (nc !== skyId && density[nc] > 0.04) add('back', quant(colors[nc]), tx, ty); break;
-        }
-      }
-      else if (cid !== skyId && density[cid] > 0.04 && !inBossRoom(tx, ty)) add('back', key, tx, ty);
+      else if (ITEM_CHARS.has(this.rows[ty][tx]) || ENEMY_CHARS[this.rows[ty][tx]]) paintBehind(tx, ty); // items/enemies are models: paint the backdrop around them
+      else if ((key.startsWith('s:') || (cid !== skyId && density[cid] > 0.04 && key !== skyQ)) && !inBossRoom(tx, ty)) add('back', key, tx, ty);
     }
     const tex = TEX.planks('#ffffff', '#e2e2e2'); const stoneTex = TEX.stone('#ffffff'); const flatTex = TEX.dirt('#f4f4f4'); // light textures: keep the NES palette colours
     for (const [kind, map] of Object.entries(groups)) {
       for (const [key, list] of map) {
-        const color = new THREE.Color('#' + key);
+        const surf = key.startsWith('s:') ? key.slice(2) : null; const color = new THREE.Color(surf ? '#ffffff' : '#' + key);
         let mat, g;
-        if (kind === 'solid') { mat = new THREE.MeshStandardMaterial({ color, map: tex, roughness: 0.85 }); g = geo; }
-        else if (kind === 'plat') { mat = new THREE.MeshStandardMaterial({ color, map: stoneTex, roughness: 0.7, metalness: 0.1 }); g = new THREE.BoxGeometry(1, 0.4, 1.1); }
-        else { mat = new THREE.MeshStandardMaterial({ color, map: flatTex, roughness: 1 }); g = new THREE.BoxGeometry(1, 1, 0.25); }
+        if (kind === 'solid') { mat = surf ? surfaceMaterial(surf) : new THREE.MeshStandardMaterial({ color, map: tex, roughness: 0.85 }); g = geo; }
+        else if (kind === 'plat') { mat = surf ? surfaceMaterial(surf) : new THREE.MeshStandardMaterial({ color, map: stoneTex, roughness: 0.7, metalness: 0.1 }); g = new THREE.BoxGeometry(1, 0.4, 1.1); }
+        else { mat = surf ? surfaceMaterial(surf) : new THREE.MeshStandardMaterial({ color, map: flatTex, roughness: 1 }); g = new THREE.BoxGeometry(1, 1, 0.25); }
         const im = new THREE.InstancedMesh(g, mat, list.length); im.castShadow = kind !== 'back'; im.receiveShadow = true;
         const q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3();
-        list.forEach(([tx, ty], i) => { const y = this.rowY(ty); if (kind === 'plat') { const h = Math.max(0.12, Math.min(0.4, density[def.cells[ty][tx]] * 1.2)); sc.set(1, h / 0.4, 1); pos.set(tx + 0.5, y + 1 - h / 2, 0); m4.compose(pos, q, sc); } else m4.makeTranslation(tx + 0.5, y + 0.5, kind === 'back' ? -0.62 : 0); im.setMatrixAt(i, m4); }); // ledges as thick as drawn
+        list.forEach(([tx, ty], i) => { const y = this.rowY(ty); if (kind === 'plat') { const h = surf ? 0.4 : Math.max(0.12, Math.min(0.4, density[def.cells[ty][tx]] * 1.2)); sc.set(1, h / 0.4, 1); pos.set(tx + 0.5, y + 1 - h / 2, 0); m4.compose(pos, q, sc); } else m4.makeTranslation(tx + 0.5, y + 0.5, kind === 'back' ? -0.62 : 0); im.setMatrixAt(i, m4); }); // ledges as thick as drawn
         this.group.add(im);
+      }
+    }
+    // object props: connected groups of cells of one kind -> one modelled prop filling the group's box
+    const ROW_ONLY = new Set(['pencil', 'pipe', 'wire']);
+    for (const [kind, list] of Object.entries(modelCells)) {
+      const left = new Set(list.map(([x, y]) => x + ',' + y));
+      for (const [sx, sy] of list) {
+        if (!left.has(sx + ',' + sy)) continue; left.delete(sx + ',' + sy);
+        const comp = [[sx, sy]]; for (let i = 0; i < comp.length; i++) { const [x, y] = comp[i]; for (const [nx, ny] of (ROW_ONLY.has(kind) ? [[x + 1, y], [x - 1, y]] : [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]])) if (left.has(nx + ',' + ny)) { left.delete(nx + ',' + ny); comp.push([nx, ny]); } }
+        const xs = comp.map(c => c[0]), ys = comp.map(c => c[1]); const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+        const box = { x0: minX, y0: this.rowY(maxY), w: maxX - minX + 1, h: maxY - minY + 1 };
+        const mid = comp[Math.floor(comp.length / 2)]; const above = kindAt(minX, minY - 1);
+        const ctx = { kindAt, rowOf: (y) => this.tyOf(y), color: colors[def.cells[mid[1]][mid[0]]], topFree: !above || !MODEL_KINDS.has(above) };
+        this.group.add(buildProp(kind, box, ctx));
       }
     }
     if (spikes.length) { // hazard cells (plants, needles): three thin cones tinted with the original block colour
@@ -172,7 +195,7 @@ export class Level {
       for (let ty = sy * 16; ty < Math.min(this.height, sy * 16 + 16); ty++) for (let tx = sx * 16; tx < Math.min(this.width, sx * 16 + 16); tx++) { const cid = def.cells[ty][tx]; if (cid < 0 || this.grid[ty * this.width + tx] !== 0) continue; any = true; cnt.set(cid, (cnt.get(cid) || 0) + 1); }
       if (!any) continue; let best = -1, bc = 0; for (const [k, v] of cnt) if (v > bc) { bc = v; best = k; }
       if (best < 0 || best === skyId || bc < 60) continue;
-      const pl = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), new THREE.MeshStandardMaterial({ color: new THREE.Color(colors[best]), roughness: 1 })); pl.position.set(sx * 16 + 8, this.rowY(sy * 16 + 15) + 8, -0.85); this.group.add(pl);
+      const pl = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), new THREE.MeshStandardMaterial({ color: new THREE.Color(colors[best]), roughness: 1 })); pl.position.set(sx * 16 + 8, this.rowY(sy * 16 + 15) + 8, bs && bs[0] === sx && bs[1] === sy ? -4 : -0.85); if (bs && bs[0] === sx && bs[1] === sy) pl.scale.setScalar(1.3); this.group.add(pl); /* the boss stands deeper than the play line */
     }
     // jets (updraft water/steam columns): translucent pillars
     for (const j of this.spawns.jets) { const jm = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 1, 10), new THREE.MeshStandardMaterial({ color: '#b0e8ff', transparent: true, opacity: 0.45, emissive: '#60a0ff', emissiveIntensity: 0.3 })); jm.position.set(j.x, j.y + 0.5, 0.1); this.group.add(jm); }

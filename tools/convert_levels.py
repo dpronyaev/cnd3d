@@ -60,6 +60,49 @@ def block_color(bl, page, pal, tile_cache, sky=None):
     if lum(best) < 40 and len(ranked) > 1 and ranked[1][1] >= ranked[0][1] * 0.35: best = ranked[1][0]  # skip black outlines/shadows
     return '#%02x%02x%02x' % best, nonbg / n
 
+
+# Zone graphics -> 3D prop kinds. Keys: (CHR page, block id). Built from tools/blockatlas.py (ref/levels/atlas_0.png).
+def _kinds(spec):
+    out = {}
+    for kind, (page, ids) in spec.items():
+        for i in ids.split(): out[(page, int(i, 16))] = kind
+    return out
+PROPS = {'0': _kinds({
+    'cobble': (0, '54 55 64 65'),
+    'brick': (0, '18 1D 3C 5C 5D 19'),
+    'window': (0, '1A 1B 1C 36 37 3D 3E 56 57'),
+    'fence': (0, '08 09 10 11 58 59 66 67 5A 5B'),
+    'fenceTop': (0, '4E 4F'),
+    'bench': (0, '3A 3B'),
+    'wood': (0, '32'),
+    'post': (0, '30 31 33 35 38 39'),
+    'pot': (0, '20 21 28 29'),
+    'cactus': (0, '22 23 2A 2B'),
+    'tulip': (0, '24 25 2C 2D'),
+    'trash': (0, '06 07 0E 0F 16 17 1E 1F 26 27'),
+    'pole': (0, '0A 0B 12 13 48 49 60 61'),
+    'polecap': (0, '2E 2F'),
+    'pipe': (0, '05 0C 0D 14 15'),
+    'wire': (0, '42 43 44 45 D2 D3 D4 D5'),
+    'insulator': (0, '40 41 46 47 4A 4B 4C 4D D0 D1 D6 D7'),
+    'roof': (0, '50 51 52 53 B8 C8 C9 CA'),
+    'metal': (0, '6C 6D 6E 6F 74 75 76 77'),
+    'dish': (0, '6A 6B 71 72 79 7A 7B 81 82 83'),
+    'antenna': (0, '5E 5F 73'),
+}) | _kinds({
+    'labtable': (1, '02 3F 99 9A A0 A1 A2 A3 A4 C5 DF 9B 9C C0 C1'),
+    'grid': (1, '04 62 63 9D AC AD AE AF'),
+    'pencil': (1, '68 70 7C 8A 8B'),
+    'testtube': (1, '7D 7E 7F 84 85 86 87 92 93 94'),
+    'flask': (1, '8C 8D 8E 8F 95 96 97 9E 9F'),
+    'woodblock': (1, '80 88 89 90 91 98'),
+    'pillar': (1, 'A5 A6 A7 A8 A9 AA AB'),
+    'labframe': (1, 'B0 B1 B2 B3 B4 BC BD'),
+    'labglass': (1, 'B5 CB CC'),
+})}
+
+LAST_SCREEN_PAGE = {}  # per level: screen -> (CHR page, palette); used by tools/blockatlas.py
+
 def convert(name):
     L = json.load(open(f'ref/levels/level_{name}.json')); info = L['info']; W, H = info['width'], info['height']; gw, gh = L['width'], L['height']
     layer, scrolls = L['layer'], L['scrolls']; filler = 0x100 if name in 'EH' else 0
@@ -95,8 +138,8 @@ def convert(name):
         idx = (sb & 0x1F) - 1
         if idx >= 24 or idx < 0: exit_cells.append(g); continue
         rec = doors_all[idx]
-        dx = rec['scrX'] * 16 + rec['px'] // 16; dy = rec['scrY'] * 16 + rec['py'] // 16
-        doors.append(dict(cells=g, dest=[dx + 0.5, (gh - 1 - dy)], destScreen=[rec['scrX'], rec['scrY']], page=rec['backId'] - 0x90, pal=rec['palId']))
+        dx = (rec['scrX'] * 256 + rec['py']) / 16 - 0.5; dy = (rec['scrY'] * 256 + rec['px'] + 12) / 16 - 1  # record fields: 'py' holds X, 'px' holds the hero's centre Y (verified: lab door -> x 24, y 148)
+        doors.append(dict(cells=g, dest=[round(dx + 0.5, 3), round(gh - 1 - dy, 3)], destScreen=[rec['scrX'], rec['scrY']], page=rec['backId'] - 0x90, pal=rec['palId']))
     # per-screen CHR page/palette: graphics change only through doors; each door destination seeds its own row
     page0 = info['backId'] - 0x90; pal0 = info['palId']
     screen_page = {}
@@ -113,6 +156,7 @@ def convert(name):
         for cc in range(dc - 1, -1, -1):
             if not valid(cc, drow): break
             screen_page[(cc, drow)] = (dr['page'], dr['pal'])
+    LAST_SCREEN_PAGE[name] = screen_page
     # cells + colours
     tile_cache = {}; colors = {}; grid = L['blocks']; types = L['types']
     screen_sky = {}
@@ -121,19 +165,20 @@ def convert(name):
         for yy in range(sc2[1] * 16, sc2[1] * 16 + 16):
             for xx in range(sc2[0] * 16, sc2[0] * 16 + 16): hist.update(block_pixels(bl[grid[yy][xx]], pg2, pal2, tile_cache))
         col, cnt = hist.most_common(1)[0]; screen_sky[sc2] = col if cnt > 256 * 256 * 0.3 else None
-    cells = []; rows = []
+    cells = []; rows = []; kcells = []; kind_ids = {}
     for y in range(gh):
-        row = []; cr = []
+        row = []; cr = []; krow = []
         for x in range(gw):
             s = (x // 16, y // 16)
-            if s not in dist: cr.append(-1); row.append('@'); continue
+            if s not in dist: cr.append(-1); row.append('@'); krow.append(-1); continue
             b = grid[y][x]; pg, pl = screen_page[s]
             pal = [rd(PAL + pl * 16 + i) for i in range(16)]
+            kind = PROPS.get(name, {}).get((pg, b)); krow.append(kind_ids.setdefault(kind, len(kind_ids)) if kind else -1)
             key = (b, pg, pl, screen_sky[s])
             if key not in colors: colors[key] = block_color(bl[b], pg, pal, tile_cache, screen_sky[s])
             cid = len(colors) if key not in colors else list(colors.keys()).index(key)
             cr.append(cid); row.append(TYPE_CH[types[y][x]])
-        cells.append(cr); rows.append(row)
+        cells.append(cr); rows.append(row); kcells.append(''.join('.' if k < 0 else chr(65 + k) for k in krow))
     # objects
     objs = []; extra = []
     for o in L['objects']:
@@ -222,10 +267,10 @@ def convert(name):
             if fy is None: continue
             x = next((xx for xx in range(c * 16 + 3, c * 16 + 16) if rows[fy - 1][xx] == '#'), None)
             if x is None: continue
-        dx = rec['scrX'] * 16 + rec['px'] // 16; dy = rec['scrY'] * 16 + rec['py'] // 16
+        dx = (rec['scrX'] * 256 + rec['py']) / 16 - 0.5; dy = (rec['scrY'] * 256 + rec['px'] + 12) / 16 - 1  # record fields: 'py' holds X, 'px' holds the hero's centre Y (verified: lab door -> x 24, y 148)
         cells_ = [(x, fy - 1), (x, fy - 2)]
         lock = 'redbox' if any(e['k'] == 'redbox' and (e['sx'], e['sy']) == (c, r) for e in extra) else None
-        doors.append(dict(cells=cells_, dest=[dx + 0.5, (gh - 1 - dy)], destScreen=[rec['scrX'], rec['scrY']], page=rec['backId'] - 0x90, pal=rec['palId'], edge=True, lock=lock))
+        doors.append(dict(cells=cells_, dest=[round(dx + 0.5, 3), round(gh - 1 - dy, 3)], destScreen=[rec['scrX'], rec['scrY']], page=rec['backId'] - 0x90, pal=rec['palId'], edge=True, lock=lock))
         used.add(ds)
     for d in doors:
         for (x, y) in d['cells']: rows[y][x] = 'D'
@@ -239,6 +284,7 @@ def convert(name):
     return dict(id=name, name=ZNAME[name], theme=THEME[name], music=MUSIC[info['musicNo']], boss=BOSS[name], act=1, outro=OUTRO.get(name),
                 rows=[''.join(r) for r in rows], cells=cells, colors=[c[0] for c in colour_list], density=[round(c[1], 2) for c in colour_list],
                 doors=[dict(x=d['cells'][0][0], y=min(c[1] for c in d['cells']), h=len(d['cells']), dest=d['dest'], edge=bool(d.get('edge')), lock=d.get('lock')) for d in doors],
+                kinds=[k for k, _ in sorted(kind_ids.items(), key=lambda kv: kv[1])], kcells=kcells if kind_ids else None,
                 extra=extra, bossScreen=list(boss_screen) if boss_screen else None,
                 sky=sky_col, skyId=sky_id, screens=[W, H], route=[list(k) for k in dist])
 

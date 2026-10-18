@@ -45,6 +45,19 @@ function bushyTail(pts, radii, m, stripe) {
   return t;
 }
 
+// one-piece cartoon moustache: a sphere deformed into two thick lobes spreading from under the nose, drooping a little,
+// tapering to points and bent around the muzzle (width/height/depth in model units)
+function moustacheGeo(width, height, depth, droop = 0.35, wrap = 0.3) {
+  const g = new THREE.SphereGeometry(1, 48, 20); const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i); const ax = Math.abs(x);
+    const taper = Math.pow(Math.max(0, 1 - ax * ax), 0.55) * (1 - 0.18 * Math.exp(-x * x / 0.01)); // thick lobes, small dip in the middle, sharp tips
+    const cy = -droop * ax * ax + 0.5 * droop * Math.pow(ax, 4); // droop, tips curl back out
+    p.setXYZ(i, x * width / 2, (y * taper * 0.5 + cy) * height, z * taper * depth / 2 - wrap * x * x * width / 2);
+  }
+  g.computeVertexNormals(); return g;
+}
+
 // chipmunk body shared by Chip and Dale ------------------------------------------------------------------------
 function chipmunk({ fur, face, dark }) {
   const root = grp(); const parts = {}; const furM = mat(fur), faceM = mat(face), darkM = mat(dark);
@@ -76,7 +89,6 @@ function chipmunk({ fur, face, dark }) {
 export function makeChip2() {
   const c = chipmunk({ fur: '#9c5428', face: '#f2dcb0', dark: '#4a2412' }); const { root, body, head, parts } = c;
   head.add(ellipsoid(0.055, 0.045, 0.045, mat('#141414'), 0, -0.07, 0.385)); // small black nose
-  for (const s of [-1, 1]) head.add(P(G.box(0.03, 0.05, 0.02), mat('#ffffff'), s * 0.017, -0.21, 0.35));
   // bomber jacket: brown leather, open at the front, shearling collar and cuffs
   const lm = leather(); body.add(outlined(shell(0.205, 0.255, 0.36, 0.5, lm, 0.05), 1.03));
   body.add(P(G.torus(0.17, 0.065), mat('#f3e3c4'), 0, 0.25, 0).rotateX(Math.PI / 2)); // shearling collar
@@ -96,7 +108,7 @@ export function makeChip2() {
 export function makeDale2() {
   const c = chipmunk({ fur: '#b5652d', face: '#f4ddb4', dark: '#4e2612' }); const { root, body, head, parts, furM } = c;
   head.add(sph(0.075, mat('#e0262a'), 0, -0.075, 0.385, 16)); // big red nose
-  for (const s of [-1, 1]) head.add(outlined(P(G.box(0.05, 0.085, 0.025), mat('#ffffff'), s * 0.03, -0.225, 0.345), 1.08)); // buck teeth with a gap
+  for (const s of [-1, 1]) head.add(P(G.box(0.022, 0.03, 0.015), mat('#ffffff'), s * 0.014, -0.195, 0.352)); // two tiny front teeth
   for (let i = 0; i < 3; i++) { const h = outlined(P(G.cone(0.045, 0.2, 8), furM, (i - 1) * 0.06, 0.32, 0.06)); h.rotation.z = (i - 1) * 0.5; h.rotation.x = -0.35; head.add(h); } // hair tuft
   // Hawaiian shirt: red with yellow/white flowers, open with a big collar
   const hm = hawaii(); body.add(outlined(shell(0.205, 0.255, 0.36, 0.42, hm, 0.05), 1.03));
@@ -106,79 +118,129 @@ export function makeDale2() {
 }
 
 export function makeGadget2() {
-  const root = grp(); const parts = {}; const fur = mat('#d8b089'), face = mat('#f3dfc4'), suit = mat('#8e6ccf'), suitD = mat('#6e4fb0'), hair = mat('#f2b85c'), pink = mat('#f08a9a');
-  const body = grp(0, 0.5, 0); root.add(body); parts.body = body;
-  // slim figure in lavender coveralls
-  body.add(outlined(lathe([[0, -0.2], [0.15, -0.19], [0.19, -0.1], [0.185, 0.04], [0.16, 0.16], [0.11, 0.26], [0.04, 0.3], [0, 0.3]], suit), 1.04));
-  body.add(P(G.torus(0.18, 0.022), suitD, 0, -0.12, 0).rotateX(Math.PI / 2)); // belt line
-  body.add(P(G.box(0.1, 0.08, 0.02), suitD, 0.07, 0.02, 0.18)); // chest pocket
-  const vneck = P(G.cone(0.07, 0.14, 3), face, 0, 0.22, 0.12); vneck.rotation.x = Math.PI; vneck.rotation.y = Math.PI; body.add(vneck);
-  const head = grp(0, 0.57, 0.02); body.add(head); parts.head = head;
-  head.add(ellipsoid(0.27, 0.26, 0.26, fur, 0, 0, 0));
-  head.add(ellipsoid(0.2, 0.18, 0.15, face, 0, -0.05, 0.14, false));
-  head.add(ellipsoid(0.12, 0.1, 0.15, face, 0, -0.1, 0.22)); // snout
-  head.add(sph(0.042, pink, 0, -0.08, 0.375, 12)); // pink nose
-  head.add(tube([[-0.05, -0.15, 0.31], [0, -0.17, 0.33], [0.05, -0.15, 0.31]], 0.009, mat('#7a3a3a'), 6));
-  cartoonEyes(head, { y: 0.04, z: 0.2, spread: 0.095, r: 0.098, iris: '#3a7bd5', lashes: true });
-  for (const s of [-1, 1]) { const ear = P(G.cyl(0.165, 0.165, 0.04, 24), fur, s * 0.22, 0.25, -0.06); ear.rotation.x = Math.PI / 2; ear.rotation.y = -s * 0.25; head.add(outlined(ear, 1.06)); const inn = P(G.cyl(0.11, 0.11, 0.045, 20), pink, s * 0.225, 0.25, -0.05); inn.rotation.x = Math.PI / 2; inn.rotation.y = -s * 0.25; head.add(inn); }
-  // strawberry-blonde hair: cap, sweeping bangs, long fall down the back
-  head.add(ellipsoid(0.285, 0.2, 0.27, hair, 0, 0.11, -0.03));
-  for (let i = 0; i < 4; i++) { const b = ellipsoid(0.09, 0.13, 0.06, hair, -0.12 + i * 0.08, 0.15, 0.2, false); b.rotation.z = 0.5 - i * 0.12; b.rotation.x = -0.6; head.add(b); }
-  const fall = tube([[0, 0.1, -0.22], [0, -0.1, -0.32], [0, -0.38, -0.3], [0, -0.6, -0.22]], 0.12, hair, 12); head.add(outlined(fall, 1.06));
-  // goggles pushed up on the hair
-  for (const s of [-1, 1]) { const rim = P(G.torus(0.065, 0.022), mat('#3a3040'), s * 0.09, 0.24, 0.17); rim.rotation.x = -0.9; head.add(rim); const lens = P(G.cyl(0.06, 0.06, 0.02, 16), new THREE.MeshToonMaterial({ color: '#c9b4ff', transparent: true, opacity: 0.75, gradientMap: toonRamp() }), s * 0.09, 0.24, 0.17); lens.rotation.x = Math.PI / 2 - 0.9; head.add(lens); }
-  const mkArm = (s) => { const a = grp(s * 0.205, 0.19, 0.02); body.add(a); const arm = grp(); arm.rotation.z = s * 0.3; a.add(arm); /* shoulders outside the slim body, arms slightly spread */
-    arm.add(limb(0.15, 0.072, 0.064, suit, 0)); arm.add(P(G.torus(0.064, 0.024), suitD, 0, -0.15, 0).rotateX(Math.PI / 2)); arm.add(limb(0.17, 0.05, 0.043, fur, -0.15));
-    const h = mitten(fur, s); h.position.y = -0.36; arm.add(h); return a; };
+  // Gadget Hackwrench: slender, feminine inventor mouse - hourglass figure in lavender coveralls, long strawberry-blonde
+  // hair, big blue eyes with lashes, purple-lens goggles on her head, small pink nose, long thin tail.
+  const root = grp(); const parts = {};
+  const fur = mat('#dcb48e'), face = mat('#f6e2c8'), suit = mat('#9b7fd8'), suitD = mat('#7458b8'), hair = mat('#f1b25c'), hairL = mat('#f8cf86'), pink = mat('#f2909e'), blush = mat('#f7b6b6');
+  const body = grp(0, 0.6, 0); root.add(body); parts.body = body;
+  // hourglass torso: hips, narrow waist, soft bust, narrow shoulders
+  body.add(outlined(lathe([[0, -0.13], [0.09, -0.125], [0.13, -0.08], [0.128, -0.01], [0.108, 0.05], [0.118, 0.12], [0.132, 0.18], [0.115, 0.25], [0.07, 0.3], [0, 0.31]], suit, 28), 1.04));
+  body.add(P(G.torus(0.118, 0.018), suitD, 0, 0.04, 0).rotateX(Math.PI / 2)); // belt at the waist
+  body.add(P(G.box(0.05, 0.035, 0.02), mat('#d8c060', { metalness: 0.5 }), 0, 0.04, 0.12)); // buckle
+  body.add(P(G.box(0.012, 0.22, 0.01), suitD, 0, 0.15, 0.135)); // front seam / zipper
+  for (const s of [-1, 1]) { const col = P(G.box(0.08, 0.06, 0.015), suitD, s * 0.05, 0.27, 0.075); col.rotation.z = s * 0.5; col.rotation.x = -0.5; body.add(col); } // collar
+  body.add(ellipsoid(0.045, 0.06, 0.03, face, 0, 0.275, 0.06, false)); // neckline
+  body.add(P(G.cyl(0.04, 0.05, 0.08, 10), fur, 0, 0.33, 0)); // slim neck
+  const head = grp(0, 0.6, 0.02); body.add(head); parts.head = head;
+  head.add(ellipsoid(0.26, 0.25, 0.25, fur, 0, 0, 0));
+  head.add(ellipsoid(0.2, 0.17, 0.15, face, 0, -0.05, 0.13, false));
+  head.add(ellipsoid(0.1, 0.075, 0.12, face, 0, -0.1, 0.22)); // small snout
+  head.add(sph(0.035, pink, 0, -0.085, 0.34, 12)); // little pink nose
+  head.add(tube([[-0.045, -0.15, 0.29], [0, -0.165, 0.305], [0.045, -0.15, 0.29]], 0.008, mat('#b0505a'), 6)); // smile
+  for (const s of [-1, 1]) head.add(ellipsoid(0.045, 0.025, 0.01, blush, s * 0.13, -0.07, 0.2, false)); // blush
+  // big blue eyes with lids and long lashes
+  cartoonEyes(head, { y: 0.04, z: 0.185, spread: 0.085, r: 0.09, iris: '#3f86e0', irisR: 0.62 });
+  for (const s of [-1, 1]) {
+    const lid = new THREE.Mesh(new THREE.SphereGeometry(0.094, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.2), mat('#e9c6a2')); lid.scale.set(1, 1.25, 0.8); lid.position.set(s * 0.085, 0.04, 0.185); head.add(lid);
+    for (let k = 0; k < 3; k++) { const l = P(G.cyl(0.006, 0.012, 0.07, 5), mat('#1a1010'), s * (0.085 + 0.03 + k * 0.02), 0.14 - k * 0.022, 0.24); l.rotation.z = -s * (0.6 + k * 0.35); l.rotation.x = -0.4; head.add(l); }
+  }
+  for (const s of [-1, 1]) { const ear = P(G.cyl(0.15, 0.15, 0.035, 24), fur, s * 0.21, 0.24, -0.07); ear.rotation.x = Math.PI / 2; ear.rotation.y = -s * 0.3; head.add(outlined(ear, 1.06)); const inn = P(G.cyl(0.1, 0.1, 0.04, 20), pink, s * 0.215, 0.24, -0.06); inn.rotation.x = Math.PI / 2; inn.rotation.y = -s * 0.3; head.add(inn); }
+  // hair: crown, a big sweeping fringe, side locks, and long waves down the back
+  head.add(ellipsoid(0.27, 0.19, 0.27, hair, 0, 0.11, -0.04));
+  const fringe = ellipsoid(0.2, 0.09, 0.1, hair, 0.03, 0.2, 0.17); fringe.rotation.z = -0.35; head.add(outlined(fringe, 1.05));
+  const curl = ellipsoid(0.07, 0.11, 0.05, hairL, -0.12, 0.15, 0.22, false); curl.rotation.z = 0.6; head.add(curl);
+  for (const s of [-1, 1]) head.add(outlined(tube([[s * 0.2, 0.06, 0.04], [s * 0.23, -0.1, 0.0], [s * 0.21, -0.26, -0.04]], 0.05, hair, 10), 1.06));
+  for (const [x, w] of [[-0.11, 0.075], [0, 0.085], [0.11, 0.075]]) head.add(outlined(tube([[x, 0.12, -0.2], [x * 1.3, -0.12, -0.27], [x * 1.1, -0.42, -0.24], [x * 1.4, -0.66, -0.18], [x, -0.82, -0.2]], w, hair, 10), 1.05));
+  head.add(tube([[0.02, 0.1, -0.26], [0.03, -0.3, -0.33], [0.0, -0.7, -0.27]], 0.025, hairL, 6)); // highlight
+  // purple-lens goggles on the forehead
+  const gog = grp(0, 0.22, 0.16); gog.rotation.x = -0.75; head.add(gog);
+  for (const s of [-1, 1]) { gog.add(P(G.torus(0.06, 0.02), mat('#4a3a5a'), s * 0.08, 0, 0)); const lens = P(G.cyl(0.055, 0.055, 0.02, 18), new THREE.MeshToonMaterial({ color: '#b48cff', transparent: true, opacity: 0.85, gradientMap: toonRamp() }), s * 0.08, 0, 0); lens.rotation.x = Math.PI / 2; gog.add(lens); }
+  gog.add(P(G.box(0.05, 0.02, 0.02), mat('#4a3a5a'), 0, 0, 0));
+  // arms: rolled-up sleeves, slim forearms
+  const mkArm = (s) => { const a = grp(s * 0.15, 0.24, 0.0); body.add(a); const arm = grp(); arm.rotation.z = s * 0.22; a.add(arm);
+    arm.add(sph(0.055, suit, 0, 0, 0, 10)); arm.add(limb(0.14, 0.055, 0.05, suit, 0)); arm.add(P(G.torus(0.05, 0.02), suitD, 0, -0.14, 0).rotateX(Math.PI / 2));
+    arm.add(limb(0.15, 0.036, 0.03, fur, -0.14)); const h = mitten(fur, s); h.scale.setScalar(0.72); h.position.y = -0.31; arm.add(h); return a; };
   parts.armL = mkArm(-1); parts.armR = mkArm(1);
-  const mkLeg = (s) => { const l = grp(s * 0.085, -0.15, 0); body.add(l); l.add(limb(0.26, 0.07, 0.06, suit, 0)); l.add(ellipsoid(0.07, 0.045, 0.13, mat('#6a4a2a'), 0, -0.3, 0.05)); return l; };
+  // long slim legs in the coverall trousers, small feet
+  const mkLeg = (s) => { const l = grp(s * 0.062, -0.1, 0); body.add(l); l.add(limb(0.43, 0.06, 0.048, suit, 0)); l.add(P(G.torus(0.048, 0.015), suitD, 0, -0.41, 0).rotateX(Math.PI / 2)); l.add(ellipsoid(0.055, 0.04, 0.11, fur, 0, -0.46, 0.045)); return l; };
   parts.legL = mkLeg(-1); parts.legR = mkLeg(1);
-  const tg = grp(0, 0, 0); tg.add(tube([[0, -0.15, -0.15], [0, -0.28, -0.4], [0, -0.1, -0.62], [0, 0.18, -0.66]], 0.022, pink, 6)); body.add(tg); parts.tail = tg;
-  root.userData.parts = parts; root.userData.height = 1.4; root.userData.bodyY = 0.5; root.userData.kind = 'gadget'; return root;
+  const tg = grp(0, 0, 0); tg.add(tube([[0, -0.08, -0.11], [0, -0.3, -0.36], [0, -0.2, -0.62], [0, 0.08, -0.7], [0, 0.22, -0.62]], 0.018, pink, 6)); body.add(tg); parts.tail = tg;
+  root.userData.parts = parts; root.userData.height = 1.5; root.userData.bodyY = 0.6; root.userData.kind = 'gadget'; return root;
 }
 
 export function makeMonty2() {
-  const root = grp(); const parts = {}; const fur = mat('#c79a68'), face = mat('#ecd3ae'), coat = mat('#3f7a45'), coatD = mat('#2e5e35'), sweater = mat('#f1e4c6'), stache = mat('#d9822b');
-  const body = grp(0, 0.72, 0); root.add(body); parts.body = body;
-  // barrel chest in a cream turtleneck, open green coat
-  body.add(outlined(lathe([[0, -0.36], [0.34, -0.34], [0.46, -0.16], [0.49, 0.04], [0.44, 0.22], [0.33, 0.36], [0.16, 0.44], [0, 0.45]], sweater), 1.03));
-  body.add(outlined(shell(0.38, 0.52, 0.72, 0.62, coat, 0.0), 1.02));
-  body.add(P(G.cyl(0.24, 0.27, 0.13, 20), sweater, 0, 0.45, 0)); body.add(P(G.torus(0.24, 0.05), sweater, 0, 0.5, 0).rotateX(Math.PI / 2)); // rolled collar
-  const head = grp(0, 0.8, 0.05); body.add(head); parts.head = head;
-  head.add(ellipsoid(0.38, 0.35, 0.35, fur, 0, 0, 0));
-  head.add(ellipsoid(0.27, 0.2, 0.2, face, 0, -0.1, 0.22, false));
-  head.add(sph(0.12, mat('#d8484a'), 0, -0.05, 0.44, 18)); // big nose
-  for (const s of [-1, 1]) { // handlebar moustache curling up, bushy sideburns
-    head.add(outlined(tube([[s * 0.04, -0.15, 0.42], [s * 0.18, -0.19, 0.38], [s * 0.3, -0.13, 0.3], [s * 0.34, -0.02, 0.26]], 0.05, stache, 10), 1.08));
-    head.add(ellipsoid(0.09, 0.16, 0.1, stache, s * 0.32, -0.07, 0.08));
-  }
-  cartoonEyes(head, { y: 0.1, z: 0.29, spread: 0.12, r: 0.085, brow: '#7a4c24', browY: 0.02 });
-  for (const s of [-1, 1]) { const ear = P(G.cyl(0.22, 0.22, 0.05, 24), fur, s * 0.32, 0.3, -0.08); ear.rotation.x = Math.PI / 2; ear.rotation.y = -s * 0.3; head.add(outlined(ear, 1.05)); const inn = P(G.cyl(0.15, 0.15, 0.055, 20), mat('#e8b9a0'), s * 0.325, 0.3, -0.07); inn.rotation.x = Math.PI / 2; inn.rotation.y = -s * 0.3; head.add(inn); }
-  const mkArm = (s) => { const a = grp(s * 0.47, 0.24, 0.02); body.add(a); a.add(limb(0.3, 0.12, 0.1, coat, 0)); a.add(P(G.torus(0.1, 0.03), coatD, 0, -0.3, 0).rotateX(Math.PI / 2)); a.add(limb(0.16, 0.08, 0.07, fur, -0.3)); const h = mitten(face, s); h.scale.setScalar(1.6); h.position.y = -0.52; a.add(h); return a; };
+  // Monterey Jack as in the TV series: very rotund golden-ochre mouse, cream jowls and muzzle, small round light ears set high,
+  // green eyes, a small dark nose with a highlight, a huge red-brown moustache, open grinning mouth, a little grey-blue cap with
+  // goggles, an open white coat with lapels over a light-blue turtleneck sweater.
+  const root = grp(); const parts = {};
+  const fur = mat('#c99a52'), cream = mat('#f6e6d4'), coat = mat('#efebe4'), coatS = mat('#d6d0c6'), sweater = mat('#6f9cc8'), sweaterD = mat('#5582b0'), stache = mat('#b8481e'), cap = mat('#7c8498');
+  const body = grp(0, 0.66, 0); root.add(body); parts.body = body;
+  // big round belly in the blue turtleneck
+  body.add(outlined(lathe([[0, -0.32], [0.3, -0.31], [0.44, -0.17], [0.49, 0.0], [0.47, 0.18], [0.4, 0.32], [0.27, 0.42], [0.1, 0.46], [0, 0.46]], sweater, 28), 1.03));
+  body.add(P(G.torus(0.3, 0.045), sweaterD, 0, -0.29, 0).rotateX(Math.PI / 2)); // ribbed hem
+  for (let i = 0; i < 4; i++) body.add(P(G.box(0.012, 0.09, 0.02), sweaterD, -0.15 + i * 0.1, -0.26, 0.33));
+  // open white coat with long lapels
+  const coatM = new THREE.MeshToonMaterial({ color: '#efebe4', gradientMap: toonRamp(), side: THREE.DoubleSide }); /* open coat hugging the round body */
+  const coatShell = new THREE.Mesh(new THREE.LatheGeometry([[0.36, -0.36], [0.47, -0.2], [0.525, 0.0], [0.505, 0.18], [0.44, 0.32], [0.3, 0.43]].map(([r, y]) => new THREE.Vector2(r, y)), 32, 0.6, Math.PI * 2 - 1.2), coatM); coatShell.castShadow = true; body.add(outlined(coatShell, 1.02));
+  body.add(P(G.torus(0.25, 0.06), sweater, 0, 0.44, 0.02).rotateX(Math.PI / 2)); // rolled collar
+  // head sits right on the body (no neck)
+  const head = grp(0, 0.74, 0.08); head.scale.setScalar(1.17); body.add(head); parts.head = head;
+  head.add(ellipsoid(0.36, 0.33, 0.33, fur, 0, 0.04, 0));
+  head.add(ellipsoid(0.39, 0.25, 0.29, cream, 0, -0.15, 0.1, false)); // wide cream jowls down to the chest
+  head.add(ellipsoid(0.2, 0.15, 0.13, cream, 0, -0.04, 0.27, false)); // muzzle
+  head.add(ellipsoid(0.07, 0.055, 0.055, mat('#4a1a12'), 0, 0.02, 0.42)); head.add(sph(0.02, mat('#ffffff'), -0.02, 0.04, 0.47, 6, false)); // small dark nose
+  // open mouth with a pink tongue under the moustache
+  const mouth = ellipsoid(0.13, 0.08, 0.05, mat('#5a1a14'), 0, -0.2, 0.33, false); head.add(mouth); head.add(ellipsoid(0.09, 0.04, 0.04, mat('#f08a90'), 0, -0.24, 0.35, false));
+  head.add(P(G.box(0.04, 0.035, 0.02), mat('#ffffff'), 0.03, -0.14, 0.37));
+  // huge red-brown moustache in one piece, spreading sideways from under the nose
+  head.add(outlined(P(moustacheGeo(1.0, 0.24, 0.13, 0.3, 0.72), stache, 0, -0.085, 0.38), 1.04));
+  cartoonEyes(head, { y: 0.15, z: 0.25, spread: 0.1, r: 0.095, iris: '#58a84a', irisR: 0.6 }); // green eyes
+  for (const s of [-1, 1]) { const ear = P(G.cyl(0.14, 0.14, 0.045, 22), cream, s * 0.29, 0.3, -0.04); ear.rotation.x = Math.PI / 2; ear.rotation.y = -s * 0.35; head.add(outlined(ear, 1.07)); const inn = P(G.cyl(0.09, 0.09, 0.05, 18), mat('#f2c8bc'), s * 0.295, 0.3, -0.03); inn.rotation.x = Math.PI / 2; inn.rotation.y = -s * 0.35; head.add(inn); }
+  // little grey-blue cap with goggles, perched on top
+  const hat = grp(0, 0.34, -0.02); hat.rotation.z = 0.12; hat.rotation.x = -0.15; head.add(hat);
+  hat.add(outlined(ellipsoid(0.2, 0.11, 0.19, cap, 0, 0, 0), 1.06));
+  const brim = P(G.cyl(0.21, 0.23, 0.03, 20), cap, 0, -0.06, 0.02); brim.scale.z = 0.95; hat.add(brim);
+  for (const s of [-1, 1]) { hat.add(P(G.torus(0.055, 0.018), mat('#3a3e4a'), s * 0.07, 0.07, 0.13).rotateX(-0.5)); const lens = P(G.cyl(0.05, 0.05, 0.02, 14), mat('#a8d8f0'), s * 0.07, 0.07, 0.13); lens.rotation.x = Math.PI / 2 - 0.5; hat.add(lens); }
+  // arms: white coat sleeves, golden hands
+  const mkArm = (s) => { const a = grp(s * 0.44, 0.26, 0.02); body.add(a); const arm = grp(); arm.rotation.z = s * 0.18; a.add(arm);
+    arm.add(sph(0.13, coat, 0, 0, 0, 12)); arm.add(limb(0.32, 0.13, 0.115, coat, 0)); arm.add(P(G.torus(0.11, 0.035), coatS, 0, -0.32, 0).rotateX(Math.PI / 2));
+    arm.add(limb(0.1, 0.08, 0.075, fur, -0.32)); const h = mitten(fur, s); h.scale.setScalar(1.75); h.position.y = -0.5; arm.add(h); return a; };
   parts.armL = mkArm(-1); parts.armR = mkArm(1);
-  const mkLeg = (s) => { const l = grp(s * 0.2, -0.36, 0.02); body.add(l); l.add(limb(0.26, 0.11, 0.1, fur, 0)); l.add(ellipsoid(0.12, 0.07, 0.22, face, 0, -0.32, 0.07)); return l; };
+  const mkLeg = (s) => { const l = grp(s * 0.18, -0.3, 0.02); body.add(l); l.add(limb(0.24, 0.12, 0.1, fur, 0)); l.add(ellipsoid(0.13, 0.075, 0.24, fur, 0, -0.3, 0.08)); return l; };
   parts.legL = mkLeg(-1); parts.legR = mkLeg(1);
-  const tg = grp(0, 0, 0); tg.add(outlined(tube([[0, -0.3, -0.42], [0, -0.55, -0.7], [0, -0.35, -0.95], [0, 0.0, -1.0]], 0.05, mat('#e0b09a'), 8), 1.1)); body.add(tg); parts.tail = tg;
-  root.userData.parts = parts; root.userData.height = 1.95; root.userData.bodyY = 0.72; root.userData.kind = 'monty'; return root;
+  const tg = grp(0, 0, 0); tg.add(outlined(tube([[0, -0.26, -0.4], [0, -0.5, -0.66], [0, -0.32, -0.95], [0, 0.0, -1.02]], 0.035, mat('#e8b8a0'), 8), 1.1)); body.add(tg); parts.tail = tg;
+  root.userData.parts = parts; root.userData.height = 1.95; root.userData.bodyY = 0.66; root.userData.kind = 'monty'; return root;
 }
 
 export function makeZipper2() {
-  const root = grp(); const parts = {}; const skin = mat('#58b88c'), belly = mat('#c8ecb8'), dark = mat('#1e4a34');
-  const body = grp(0, 0.38, 0); root.add(body); parts.body = body;
-  body.add(outlined(lathe([[0, -0.2], [0.11, -0.18], [0.15, -0.05], [0.14, 0.08], [0.09, 0.16], [0, 0.18]], skin), 1.06));
-  body.add(ellipsoid(0.09, 0.12, 0.05, belly, 0, -0.04, 0.11, false));
-  for (let i = 0; i < 3; i++) body.add(P(G.torus(0.12 - i * 0.015, 0.012), dark, 0, -0.12 + i * 0.05, -0.01).rotateX(Math.PI / 2)); // abdomen rings
-  const head = grp(0, 0.32, 0.02); body.add(head); parts.head = head;
-  head.add(ellipsoid(0.22, 0.2, 0.2, skin, 0, 0, 0));
-  cartoonEyes(head, { y: 0.04, z: 0.1, spread: 0.1, r: 0.12, iris: '#2f7fe0', irisR: 0.7 }); // huge eyes
-  head.add(sph(0.035, mat('#2a6a4a'), 0, -0.08, 0.2, 10)); head.add(tube([[-0.05, -0.12, 0.18], [0, -0.14, 0.2], [0.05, -0.12, 0.18]], 0.008, dark, 6));
-  for (const s of [-1, 1]) { head.add(tube([[s * 0.05, 0.17, 0.02], [s * 0.1, 0.32, 0.0], [s * 0.17, 0.4, 0.04]], 0.01, dark, 5)); head.add(sph(0.03, dark, s * 0.17, 0.4, 0.04, 8, false)); }
-  const wm = new THREE.MeshToonMaterial({ color: '#dff2ff', transparent: true, opacity: 0.55, side: THREE.DoubleSide, gradientMap: toonRamp() });
-  const wings = grp(0, 0.12, -0.12); body.add(wings); parts.wings = wings;
-  for (const s of [-1, 1]) { const w = P(G.sph(1, 14), wm, s * 0.24, 0.04, 0); w.scale.set(0.24, 0.012, 0.11); w.rotation.z = s * 0.2; w.userData.side = s; wings.add(w); }
-  const mkLeg = (s) => { const l = grp(s * 0.05, -0.17, 0); body.add(l); l.add(limb(0.17, 0.016, 0.016, dark, 0)); l.add(ellipsoid(0.035, 0.022, 0.05, dark, 0, -0.18, 0.02, false)); return l; };
+  // Zipper as in the series: teal-green housefly; the top of the head is two huge yellow compound eyes merging into a heart
+  // shape with tiny black pupils at the bottom; big black nose, wide open grin with a pink tongue, double antennae;
+  // red T-shirt with a rolled collar and short sleeves; long thin arms and legs, big flat feet, small pale-blue wings.
+  const root = grp(); const parts = {};
+  const skin = mat('#3fae96'), eye = mat('#fff35a', { emissive: '#a09000', emissiveIntensity: 0.9 }), black = mat('#151515'), shirt = mat('#e2262a'), shirtD = mat('#b81a1e'), mouthM = mat('#6a1a1a');
+  const body = grp(0, 0.36, 0); root.add(body); parts.body = body;
+  // red T-shirt torso
+  body.add(outlined(lathe([[0, -0.11], [0.085, -0.1], [0.115, -0.04], [0.12, 0.04], [0.105, 0.1], [0.06, 0.13], [0, 0.135]], shirt), 1.06));
+  body.add(P(G.torus(0.055, 0.022), shirtD, 0, 0.125, 0).rotateX(Math.PI / 2)); // rolled collar
+  body.add(ellipsoid(0.08, 0.07, 0.07, skin, 0, -0.14, 0)); // abdomen below the shirt
+  // head: wide teal face, huge yellow eye dome on top
+  const head = grp(0, 0.29, 0.02); body.add(head); parts.head = head;
+  head.add(ellipsoid(0.23, 0.14, 0.18, skin, 0, -0.085, 0)); // cheeks / jaw
+  for (const s of [-1, 1]) { const lobe = ellipsoid(0.145, 0.19, 0.16, eye, s * 0.085, 0.1, 0.0); lobe.rotation.z = -s * 0.12; head.add(lobe); }
+  for (const s of [-1, 1]) head.add(ellipsoid(0.024, 0.034, 0.015, black, s * 0.034, 0.035, 0.157, false)); // little pupils at the bottom of the yellow eyes
+  head.add(outlined(ellipsoid(0.075, 0.055, 0.06, black, 0, -0.065, 0.17), 1.05)); head.add(ellipsoid(0.025, 0.015, 0.01, mat('#ffffff'), 0, -0.045, 0.228, false)); // nose
+  const mouth = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), mouthM); mouth.scale.set(0.13, 0.07, 0.06); mouth.position.set(0, -0.1, 0.13); head.add(mouth);
+  head.add(ellipsoid(0.05, 0.02, 0.03, mat('#f0409a'), 0, -0.15, 0.15, false)); // tongue
+  head.add(tube([[-0.19, -0.04, 0.09], [-0.1, -0.11, 0.15], [0, -0.115, 0.17], [0.1, -0.11, 0.15], [0.19, -0.04, 0.09]], 0.007, black, 6)); // grin line
+  for (const s of [-1, 1]) for (const k of [0, 1]) head.add(tube([[s * (0.05 + k * 0.03), 0.26, -0.02], [s * (0.07 + k * 0.05), 0.36, -0.01], [s * (0.13 + k * 0.06), 0.42 - k * 0.02, 0.0]], 0.008, skin, 5)); // double antennae
+  // wings
+  const wm = new THREE.MeshToonMaterial({ color: '#c6d8f4', transparent: true, opacity: 0.7, side: THREE.DoubleSide, gradientMap: toonRamp() });
+  const wings = grp(0, 0.02, -0.11); body.add(wings); parts.wings = wings;
+  for (const s of [-1, 1]) { const w = P(G.sph(1, 14), wm, s * 0.12, -0.02, 0); w.scale.set(0.13, 0.09, 0.012); w.rotation.z = s * 0.5; w.userData.side = s; wings.add(w); }
+  // long thin limbs, big flat feet
+  const mkLeg = (s) => { const l = grp(s * 0.045, -0.17, 0); body.add(l); l.add(limb(0.17, 0.022, 0.02, skin, 0)); l.add(outlined(ellipsoid(0.055, 0.025, 0.08, skin, s * 0.02, -0.18, 0.035), 1.08)); return l; };
   parts.legL = mkLeg(-1); parts.legR = mkLeg(1);
-  const mkArm = (s) => { const a = grp(s * 0.13, 0.08, 0.04); body.add(a); a.add(limb(0.17, 0.018, 0.016, skin, 0)); a.add(sph(0.03, skin, 0, -0.18, 0, 8, false)); return a; };
+  const mkArm = (s) => { const a = grp(s * 0.11, 0.08, 0); body.add(a); a.add(sph(0.045, shirt, 0, 0, 0, 10)); const arm = grp(); arm.rotation.z = s * 0.25; a.add(arm); arm.add(limb(0.2, 0.02, 0.018, skin, -0.02)); arm.add(ellipsoid(0.03, 0.035, 0.025, skin, 0, -0.23, 0)); return a; };
   parts.armL = mkArm(-1); parts.armR = mkArm(1);
-  root.userData.parts = parts; root.userData.height = 0.8; root.userData.bodyY = 0.38; root.userData.kind = 'zipper'; root.userData.flyer = true; return root;
+  root.userData.parts = parts; root.userData.height = 0.8; root.userData.bodyY = 0.36; root.userData.kind = 'zipper'; root.userData.flyer = true; return root;
 }

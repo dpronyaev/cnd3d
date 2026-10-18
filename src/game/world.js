@@ -4,7 +4,7 @@ import { Level } from './level.js';
 import { Player, Item, Enemy, Boss, Projectile, Platform, Particles, aabb } from './entities.js';
 import { SFX, MUSIC } from './constants.js';
 import { animateBackground } from './themes.js';
-import { makeNPC, animateCharacter } from './models.js';
+import { makeNPC, animateCharacter, RANGERS } from './models.js';
 
 export class World {
   constructor(game, def, playerKinds) {
@@ -84,8 +84,11 @@ export class World {
       for (const p of this.players) if (p.onPlatform && !p.dead) { p.x += p.onPlatform.dx; p.y += p.onPlatform.dy; }
       for (const it of this.items) it.update(dt, lv);
       for (const it of this.items) if (it.hiddenUnder && !this.items.some(c => c.kind === 'crate' && !c.dead && !c.carriedBy && Math.abs(c.x - it.x) < 0.5 && Math.abs(c.y - it.y) < 0.5)) { it.hiddenUnder = false; it.mesh.visible = true; }
-      for (const p of this.players) { if (!p.active || p.dead || p.carriedBy) continue; const tx = Math.floor(p.x), ty = lv.tyOf(p.y + 0.5); if (lv.spawns.doors.some(d => d.edge && !d.lock && d.dest && d.tx === tx && Math.abs(d.ty - ty) <= 1)) this.useDoor(p); }
+      for (const p of this.players) { if (!p.active || p.dead || p.carriedBy) continue; const tx = Math.floor(p.x), ty = lv.tyOf(p.y + 0.5); if (lv.spawns.doors.some(d => (d.edge || lv.original) && !d.lock && d.dest && d.tx === tx && Math.abs(d.ty - ty) <= 1)) this.useDoor(p); /* NES: you walk into a doorway */ }
       for (const e of this.enemies) e.update(dt, lv);
+      if (this.redboxEvent) this._updateRedbox(dt);
+      const zip = this.players.some(p => p.zipperT > 0); /* the Zipper tune plays while the bonus lasts */
+      if (zip && !this.zipMusic) { this.zipMusic = true; this.audio.playMusic(MUSIC.gadget); } else if (!zip && this.zipMusic) { this.zipMusic = false; this.audio.playMusic(this.bossActive && this.boss ? MUSIC.boss : this.def.music); }
       for (const pr of this.projectiles) pr.update(dt, lv);
       if (this.boss) { this.boss.update(dt, lv); if (this.boss.gone) { this.boss.dispose(); this.boss = null; } }
       this.particles.update(dt);
@@ -114,7 +117,7 @@ export class World {
       if (!p.active || p.dead || p.carriedBy) continue;
       // pickups
       for (const it of this.items) {
-        if (it.dead || it.carryable || it.hiddenUnder) continue;
+        if (it.dead || it.carryable || it.hiddenUnder || it.used) continue;
         if (aabb(p, it)) { this._collect(p, it); }
       }
       // enemies
@@ -123,8 +126,10 @@ export class World {
         const eb = { x: e.x, y: e.y, w: e.w * 0.8, h: e.h * 0.85 };
         if (aabb(p, eb)) {
           if (p.zipperT > 0) { e.hit(); continue; }
-          if (p.hidden && p.carry) { // enemy bumps into the box: damaged
-            e.hit(); continue;
+          if (p.hidden && p.carry) { // enemy bumps into the box: it is hit as if by a thrown crate and the crate flies off
+            const c = p.carry, dir = Math.sign(e.x - p.x) || p.facing; p.carry = null; p.hidden = false;
+            c.carriedBy = null; c.anchored = false; c.thrown = true; c.straight = false; c.thrower = p; c.thrownT = 0; c.x = p.x; c.y = p.y + 0.4; c.vx = dir * 7; c.vy = 10;
+            e.hit(c); continue;
           }
           p.hurt(1, Math.sign(p.x - e.x) || 1);
         }
@@ -168,11 +173,26 @@ export class World {
       case 'oneup': g.lives++; this.sfx(SFX.oneup); this.game.toast('1 UP!'); break;
       case 'chest': { this.sfx(SFX.item); const roll = Math.random(); if (roll < 0.45) this.spawnItem('bigacorn', it.x, it.y + 0.6); else if (roll < 0.8) this.spawnItem('star', it.x, it.y + 0.6); else { this.hasP = true; this.game.toast('СИЛА! Тяжёлое — легко'); this.spawnParticles(it.x, it.y + 0.5, '#ffd040', 14); } break; }
       case 'cheese': { this.sfx(SFX.powerup); this._summonMonty(p); break; }
-      case 'zipper': { this.sfx(SFX.powerup); for (const q of this.players) q.zipperT = 8; for (const e of this.enemies) if (!e.dead && Math.abs(e.x - this.camX) < 14) e.hit(); this.game.toast('ВЖИК! Неуязвимость!'); break; }
-      case 'redbox': { this.sfx(SFX.crateBreak); this.spawnParticles(it.x, it.y + 0.6, '#e03028', 16); this.level.unlockDoors('redbox'); this.shake = 0.3; break; } // opens the passage to the boss
+      case 'zipper': { this.sfx(SFX.powerup); for (const q of this.players) q.zipperT = this.level.original ? 520 / 60 : 8; if (!this.level.original) for (const e of this.enemies) if (!e.dead && Math.abs(e.x - this.camX) < 14) e.hit(); this.game.toast('ВЖИК! Неуязвимость!'); break; } /* NES: 520 frames with its own tune */
+      case 'redbox': { if (!it.used) { it.used = true; this._startRedbox(it); } return; } /* Monty smells the cheese and breaks through to the boss */
       case 'gear': { this.gearsCollected++; this.game.progress.gears++; this.sfx(SFX.oneup); this.game.toast(`Деталь ${this.gearsCollected}/${this.gearsTotal}`); break; }
     }
     it.dead = true; this.spawnParticles(it.x, it.y + 0.4, '#ffffff', 6);
+  }
+  // NES zone 0: touching the big red box (cheese inside) brings Monterey Jack running in from the left edge of the screen at
+  // 2 px/frame; he gobbles the cheese box on his way and smashes the wall on the right, opening the passage to the boss.
+  _startRedbox(it) {
+    const room0 = Math.floor(it.x / 16) * 16; const door = this.level.spawns.doors.find(d => d.lock === 'redbox');
+    const monty = RANGERS.monty(); monty.scale.setScalar(0.78); this.scene.add(monty);
+    this.redboxEvent = { t: 0, monty, box: it, x: room0 + 0.3, y: it.y, doorX: door ? door.tx : it.x + 5, broke: false };
+    this.sfx(SFX.powerup); this.game.toast('Рокфор почуял сыр!');
+  }
+  _updateRedbox(dt) {
+    const ev = this.redboxEvent; ev.t += dt; ev.x += 7.5 * dt;
+    ev.monty.position.set(ev.x, ev.y, 0.4); animateCharacter(ev.monty, { facing: 1, vx: 7.5, vy: 0, grounded: true, t: ev.t }, dt);
+    if (ev.box && ev.x >= ev.box.x - 0.3) { ev.box.dead = true; this.spawnParticles(ev.box.x, ev.box.y + 0.6, '#f0c030', 14); this.sfx(SFX.item); ev.box = null; }
+    if (!ev.broke && ev.x >= ev.doorX - 0.7) { ev.broke = true; this.level.unlockDoors('redbox'); this.spawnParticles(ev.doorX + 0.5, ev.y + 1, '#c8c8c8', 24); this.sfx(SFX.explode); this.shake = 0.5; }
+    if (ev.broke && ev.x > ev.doorX + 1.5) { this.scene.remove(ev.monty); this.redboxEvent = null; }
   }
   _summonMonty(p) {
     // Monterey Jack runs through and smashes breakable walls in range
@@ -215,7 +235,11 @@ export class World {
       if (this.camBand == null) this.camBand = band;
       if (band !== this.camBand) { const inBand = (this.level.height - 1 - lead.y) - band * 16; if (inBand > 1.5 && inBand < 14.5) this.camBand = band; }
       ty = this.level.height - this.camBand * 16 - 7.5; // NES shows the top 240 of the 256 px of a screen: 15 rows
-      const halfW = 8; if (isFinite(this.camLockL)) tx = (this.camLockL + this.camLockR) / 2; tx = Math.max(halfW, Math.min(this.level.width - halfW, tx)); // boss screen: fixed camera
+      const halfW = 8; if (isFinite(this.camLockL)) tx = (this.camLockL + this.camLockR) / 2; tx = Math.max(halfW, Math.min(this.level.width - halfW, tx));
+      const route = this.def.route; if (route && !isFinite(this.camLockL)) { /* NES: the camera only scrolls over real screens of this row */
+        const has = (c) => route.some(([rc, rr]) => rc === c && rr === this.camBand); let c0 = Math.floor(lead.x / 16), c1 = c0;
+        if (has(c0)) { while (has(c0 - 1)) c0--; while (has(c1 + 1)) c1++; tx = Math.max(c0 * 16 + halfW, Math.min((c1 + 1) * 16 - halfW, tx)); }
+      } // boss screen: fixed camera
     } else {
       const halfW = 10.5; tx = Math.max(this.camLockL + 0.5, Math.min(this.camLockR - 0.5, tx)); tx = Math.max(halfW, Math.min(this.level.width - halfW, tx)); ty = Math.max(5.5, Math.min(this.level.height - 2, ty));
     }

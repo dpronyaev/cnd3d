@@ -298,17 +298,22 @@ export function makeEnemy(type) {
       g.add(P(G.cyl(0.025, 0.025, 0.55, 5), dark, -0.78, 1.28, 0).rotateZ(0.35)); g.add(sph(0.07, mat('#d8d8d8'), -0.88, 1.53, 0, 8, false));
       u.w = 1.4; u.h = 1.3; u.sideView = true; break; }
     case 'bee': { const b = ellipsoid(0.38, 0.3, 0.3, mat('#f2c12e'), 0, 0.5, 0); g.add(b); for (const x of [-0.12, 0.14]) { const s = P(G.torus(0.3, 0.06), mat('#222'), x, 0.5, 0); s.rotation.y = Math.PI / 2; g.add(s); } g.add(sph(0.2, mat('#222'), 0.4, 0.55, 0, 12)); g.add(P(G.cone(0.05, 0.25, 6), mat('#222'), -0.45, 0.45, 0).rotateZ(Math.PI / 2)); simpleEyes(g, 0.62, 0.52, 0.12, 0.07); const wm = new THREE.MeshToonMaterial({ color: '#dff', transparent: true, opacity: 0.5, side: THREE.DoubleSide, gradientMap: toonRamp() }); u.wings = []; for (const s of [-1, 1]) { const w = P(G.box(0.5, 0.02, 0.22), wm, 0, 0.8, s * 0.25); w.userData.side = s; g.add(w); u.wings.push(w); } u.w = 0.8; u.h = 0.7; u.flyer = true; break; }
-    case 'mechmouse': { // NES mouse: cream fur, big round ear, black eye, pointy snout, thin tail with a white spring ball (faces +x)
-      const fur = mat('#e8d4b4'), dark = mat('#2a2220'), pink = mat('#c89a84');
-      const body = ellipsoid(0.32, 0.28, 0.26, fur, -0.05, 0.36, 0); g.add(body); g.add(ellipsoid(0.22, 0.14, 0.2, mat('#f6ead8'), 0.04, 0.26, 0, false));
-      const head = grp(0.26, 0.56, 0); g.add(head); u.head = head;
-      head.add(ellipsoid(0.24, 0.2, 0.2, fur, 0, 0, 0));
-      const snout = P(G.cone(0.13, 0.32, 10), fur, 0.27, -0.04, 0); snout.rotation.z = -Math.PI / 2; head.add(outlined(snout, 1.06)); head.add(sph(0.05, dark, 0.44, -0.04, 0, 8, false));
-      for (const s of [-1, 1]) { head.add(sph(0.055, dark, 0.13, 0.06, s * 0.15, 8, false)); head.add(sph(0.018, mat('#ffffff'), 0.16, 0.08, s * 0.19, 6, false)); }
-      for (const s of [-1, 1]) { const ear = P(G.cyl(0.19, 0.19, 0.05, 16), fur, -0.06, 0.24, s * 0.11); ear.rotation.x = Math.PI / 2; ear.rotation.y = s * 0.3; head.add(outlined(ear, 1.08)); const inner = P(G.cyl(0.12, 0.12, 0.06, 14), pink, -0.05, 0.24, s * 0.12); inner.rotation.x = Math.PI / 2; inner.rotation.y = s * 0.3; head.add(inner); }
-      u.legsZ = []; for (const x of [0.12, -0.2]) { const leg = grp(x, 0.18, 0); g.add(leg); leg.add(ellipsoid(0.11, 0.07, 0.16, dark, 0.04, -0.12, 0, false)); u.legsZ.push(leg); }
-      g.add(tube([[-0.34, 0.34, 0], [-0.55, 0.5, 0], [-0.62, 0.78, 0], [-0.55, 0.98, 0]], 0.025, mat('#f4f4f4'))); g.add(sph(0.08, mat('#ffffff'), -0.53, 1.05, 0, 10));
-      u.w = 0.9; u.h = 0.85; u.sideView = true; break; }
+    case 'mechmouse': { // NES zone 0 "mouse": an upright rat-like henchman as tall as Chip - long pointed snout with a black nose,
+      // angry eye, one big ear, cream body with a dark back, white glove fist, thin tail sticking straight up (faces +x)
+      const fur = mat('#ecdcbe'), dark = mat('#2a2220'), glove = mat('#ffffff');
+      const body = ellipsoid(0.2, 0.3, 0.19, fur, -0.02, 0.62, 0); body.rotation.z = -0.15; g.add(body);
+      const back = ellipsoid(0.12, 0.27, 0.17, dark, -0.13, 0.66, 0, false); back.rotation.z = -0.15; g.add(back);
+      const head = grp(0.1, 1.02, 0); g.add(head); u.head = head;
+      head.add(ellipsoid(0.2, 0.17, 0.17, fur, 0, 0, 0));
+      const snout = P(G.cone(0.12, 0.42, 12), fur, 0.3, -0.05, 0); snout.rotation.z = -Math.PI / 2 - 0.12; head.add(outlined(snout, 1.05));
+      head.add(sph(0.05, dark, 0.52, -0.08, 0, 8, false));
+      for (const s2 of [-1, 1]) { head.add(ellipsoid(0.06, 0.05, 0.03, mat('#ffffff'), 0.1, 0.05, s2 * 0.13, false)); head.add(sph(0.025, dark, 0.13, 0.04, s2 * 0.155, 6, false)); const lid = P(G.box(0.12, 0.03, 0.05), dark, 0.1, 0.1, s2 * 0.13); lid.rotation.z = -0.4; head.add(lid); }
+      const ear = P(G.cyl(0.17, 0.17, 0.04, 18), fur, -0.1, 0.2, 0); ear.rotation.x = Math.PI / 2; head.add(outlined(ear, 1.08)); const inner = P(G.cyl(0.1, 0.1, 0.05, 14), mat('#b89a80'), -0.09, 0.2, 0.01); inner.rotation.x = Math.PI / 2; head.add(inner);
+      u.legsZ = [];
+      for (const z of [0.09, -0.09]) { const leg = grp(-0.02, 0.4, z); g.add(leg); leg.add(P(G.cyl(0.045, 0.04, 0.3, 8), fur, 0, -0.15, 0)); leg.add(ellipsoid(0.1, 0.04, 0.06, dark, 0.05, -0.33, 0, false)); u.legsZ.push(leg); }
+      const arm = grp(0.08, 0.78, 0.16); g.add(arm); arm.add(P(G.cyl(0.035, 0.03, 0.22, 6), fur, 0.06, -0.1, 0).rotateZ(0.6)); arm.add(sph(0.09, glove, 0.16, -0.18, 0, 10)); u.arms = [arm];
+      g.add(P(G.cyl(0.015, 0.015, 0.75, 5), mat('#f0f0f0'), -0.24, 0.95, 0)); g.add(sph(0.035, mat('#f0f0f0'), -0.24, 1.33, 0, 6, false));
+      u.w = 0.8; u.h = 1.45; u.sideView = true; break; }
     case 'rat': { const fur = mat('#9a7b5a'); g.add(ellipsoid(0.42, 0.34, 0.3, fur, 0, 0.42, 0)); g.add(ellipsoid(0.28, 0.26, 0.26, fur, 0.45, 0.6, 0)); g.add(ellipsoid(0.16, 0.12, 0.14, mat('#e0c0a0'), 0.68, 0.52, 0, false)); g.add(sph(0.06, mat('#222'), 0.82, 0.54, 0, 8, false)); simpleEyes(g, 0.68, 0.58, 0.12, 0.07); for (const s of [-1, 1]) g.add(ellipsoid(0.1, 0.11, 0.04, mat('#e0a0a0'), 0.45, 0.85, s * 0.18)); g.add(outlined(tube([[-0.35, 0.4, 0], [-0.7, 0.3, 0.1], [-0.95, 0.5, 0.2]], 0.04, mat('#e0a0a0')), 1.1)); u.legs = []; for (const x of [-0.2, 0.25]) { const l = P(G.cyl(0.06, 0.06, 0.25, 6), fur, x, 0.12, 0); g.add(l); u.legs.push(l); } u.w = 1.2; u.h = 0.9; break; }
     case 'crab': { const m = mat('#e04040'); g.add(ellipsoid(0.6, 0.3, 0.42, m, 0, 0.4, 0)); simpleEyes(g, 0.72, 0.1, 0.18, 0.08); u.claws = []; for (const s of [-1, 1]) { const c = grp(s * 0.65, 0.5, 0.1); g.add(c); c.add(sph(0.2, m, 0, 0, 0, 12)); c.add(P(G.box(0.25, 0.1, 0.1), m, s * 0.2, 0.08, 0)); u.claws.push(c); } u.legs = []; for (let i = 0; i < 3; i++) for (const s of [-1, 1]) { const l = P(G.cyl(0.04, 0.04, 0.4, 5), m, s * (0.3 + i * 0.15), 0.2, -0.3 + i * 0.3); l.rotation.z = s * 0.6; g.add(l); u.legs.push(l); } u.w = 1.3; u.h = 0.8; break; }
     case 'spider': { const m = mat('#2a2a2a'); g.add(sph(0.32, m, 0, 0.4, 0, 14)); g.add(sph(0.2, m, 0.35, 0.45, 0, 12)); simpleEyes(g, 0.5, 0.15, 0.1, 0.06); for (let i = 0; i < 4; i++) for (const s of [-1, 1]) { const l = P(G.cyl(0.03, 0.03, 0.6, 4), m, (i - 1.5) * 0.15, 0.35, s * 0.4); l.rotation.x = s * 1.0; g.add(l); } u.thread = P(G.cyl(0.01, 0.01, 1, 4), mat('#ddd'), 0, 1.2, 0); g.add(u.thread); u.w = 0.8; u.h = 0.7; u.hanger = true; break; }

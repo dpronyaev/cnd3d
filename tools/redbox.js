@@ -12,5 +12,5 @@ step(200); press(B.BUTTON_START, 4); step(60); press(B.BUTTON_START, 4); for (le
 step(60);
 nes.buttonDown(1, B.BUTTON_RIGHT); step(60); press(B.BUTTON_B, 2); step(6); nes.buttonUp(1, B.BUTTON_RIGHT); step(20);
 console.log('carry', m[0x56].toString(16), 'P', m[0x4f0] + 256 * m[0x500], m[0x510]); shot('../ref/levels/redbox_1.png');
-press(B.BUTTON_B, 2); step(20); shot('../ref/levels/redbox_2.png'); step(40); shot('../ref/levels/redbox_3.png'); step(120); shot('../ref/levels/redbox_4.png');
+const X = (k) => m[0x4f0 + k] + 256 * m[0x500 + k]; for (let f = 0; f < 240; f += 6) { step(6); const r = []; for (let k = 1; k < 16; k++) if (m[0x4d0 + k] & 0x80) r.push(k + ':' + (X(k) - 1536) + ',' + m[0x510 + k]); console.log('f' + f, 'P', X(0) - 1536, '|', r.join(' ')); if (f === 60) shot('../ref/levels/redbox_mid.png'); }
 console.log('room', m[0x500], m[0x520], 'P', m[0x4f0] + 256 * m[0x500], m[0x510]);
