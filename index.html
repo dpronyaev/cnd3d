@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Чип и Дейл спешат на помощь — 3D</title>
+<style>
+  :root { --hud: #fff; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: "Trebuchet MS", "Segoe UI", Arial, sans-serif; color: var(--hud); }
+  #game { position: fixed; inset: 0; }
+  canvas { display: block; }
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+  .hud-top { position: absolute; top: 12px; left: 16px; right: 16px; display: flex; justify-content: space-between; font-weight: 700; font-size: clamp(14px, 2.2vw, 22px); text-shadow: 0 2px 0 #000, 0 0 8px #000; }
+  .hud-player { display: flex; gap: 14px; align-items: center; }
+  .hearts span { display: inline-block; width: 1em; height: 1em; margin-right: 3px; background: #e33; clip-path: polygon(50% 100%, 0 40%, 0 20%, 20% 0, 50% 18%, 80% 0, 100% 20%, 100% 40%); }
+  .hearts span.empty { background: #533; }
+  .hud-item { display: inline-flex; align-items: center; gap: 5px; }
+  .hud-item i { display: inline-block; width: 0.9em; height: 0.9em; }
+  .hud-flower i { background: radial-gradient(circle, #fd4 0 30%, #f47 32% 100%); border-radius: 50%; }
+  .hud-star i { background: #fd4; clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); }
+  .hud-gear i { background: #da3; border-radius: 50%; box-shadow: inset 0 0 0 3px #000; }
+  .hud-center { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-weight: 700; font-size: clamp(14px, 2vw, 20px); text-shadow: 0 2px 0 #000; opacity: 0.9; }
+  #boss-bar { position: absolute; top: 46px; left: 50%; transform: translateX(-50%); width: min(50vw, 420px); height: 14px; border: 2px solid #fff; background: #300; display: none; }
+  #boss-bar div { height: 100%; background: linear-gradient(#f66, #c00); transition: width 0.2s; }
+  #msg { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); font-size: clamp(22px, 4vw, 46px); font-weight: 900; text-align: center; text-shadow: 0 3px 0 #000, 0 0 16px #000; letter-spacing: 1px; white-space: pre-line; }
+  #dialog { position: absolute; left: 50%; bottom: 6%; transform: translateX(-50%); width: min(92vw, 860px); background: rgba(0,0,0,0.82); border: 3px solid #fff; border-radius: 10px; padding: 14px 20px 18px; font-size: clamp(15px, 2vw, 22px); line-height: 1.35; display: none; box-shadow: 0 0 0 4px #000; }
+  #dialog .who { display: inline-block; background: #fff; color: #000; font-weight: 800; padding: 2px 10px; border-radius: 4px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+  #dialog .text { min-height: 2.8em; white-space: pre-line; }
+  #dialog .next { position: absolute; right: 16px; bottom: 8px; font-size: 0.8em; opacity: 0.8; animation: blink 0.8s infinite; }
+  @keyframes blink { 50% { opacity: 0.1; } }
+  #menu { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); text-align: center; font-size: clamp(16px, 2.4vw, 26px); font-weight: 700; text-shadow: 0 2px 0 #000; display: none; }
+  #menu .item { padding: 4px 24px; opacity: 0.75; }
+  #menu .item.sel { opacity: 1; }
+  #menu .item.sel::before { content: "▶ "; }
+  #menu .item.sel::after { content: " ◀"; }
+  #help { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); font-size: clamp(11px, 1.4vw, 15px); opacity: 0.75; text-align: center; text-shadow: 0 1px 0 #000; white-space: pre-line; }
+  #fade { position: fixed; inset: 0; background: #000; opacity: 1; transition: opacity 0.5s; pointer-events: none; }
+  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; font-size: 22px; background: #000; z-index: 10; }
+  #loading .bar { width: 320px; height: 10px; border: 2px solid #fff; } #loading .bar div { height: 100%; width: 0; background: #e33; }
+  .small { font-size: 0.7em; opacity: 0.8; }
+  #touch { position: fixed; inset: 0; pointer-events: none; display: none; }
+  #touch button { position: absolute; pointer-events: auto; width: 64px; height: 64px; border-radius: 50%; border: 2px solid #fff; background: rgba(255,255,255,0.2); color: #fff; font-weight: 800; font-size: 18px; touch-action: none; user-select: none; }
+  @media (pointer: coarse) { #touch { display: block; } }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js" } }
+</script>
+</head>
+<body>
+<div id="game"></div>
+<div id="hud">
+  <div class="hud-top">
+    <div class="hud-player" id="p1hud"></div>
+    <div class="hud-player" id="p2hud"></div>
+  </div>
+  <div class="hud-center" id="zone-label"></div>
+  <div id="boss-bar"><div></div></div>
+  <div id="msg"></div>
+  <div id="menu"></div>
+  <div id="dialog"><div class="who"></div><div class="text"></div><div class="next">▼</div></div>
+  <div id="help"></div>
+</div>
+<div id="touch">
+  <button style="left:20px;bottom:90px" data-k="ArrowLeft">◀</button>
+  <button style="left:100px;bottom:90px" data-k="ArrowRight">▶</button>
+  <button style="left:60px;bottom:160px" data-k="ArrowUp">▲</button>
+  <button style="left:60px;bottom:20px" data-k="ArrowDown">▼</button>
+  <button style="right:24px;bottom:110px" data-k="KeyZ">A</button>
+  <button style="right:100px;bottom:50px" data-k="KeyX">B</button>
+  <button style="right:60px;top:60px;width:80px;height:40px;border-radius:8px" data-k="Enter">START</button>
+</div>
+<div id="fade"></div>
+<div id="loading"><div>Загрузка…</div><div class="bar"><div id="loadbar"></div></div><div class="small" id="loadtext"></div></div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

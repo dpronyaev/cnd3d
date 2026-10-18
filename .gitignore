@@ -1,0 +1,7 @@
+# Original game ROM and material rendered from it (copyrighted, not distributed)
+*.nes
+ref/
+# tooling
+tools/node_modules/
+__pycache__/
+*.pyc
