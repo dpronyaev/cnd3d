@@ -8,6 +8,7 @@ import { MUSIC, SFX, ALL_TRACKS } from './game/constants.js';
 import { ORIG } from './game/levels_orig_data.js';
 import { ACT2 } from './game/levels_act2.js';
 import { ZONES, MAPS, CUTSCENES, CHARACTER_NAMES, ZONE_HINTS } from './game/story.js';
+import { buildWorldMap } from './game/worldmap.js';
 import { RANGERS, animateCharacter, makeNPC, makeItem, animateItem, mat, getHeroStyle, setHeroStyle } from './game/models.js';
 import { THEMES, buildBackground, TEX } from './game/themes.js';
 
@@ -100,6 +101,41 @@ class Game {
     }
     this.camera.position.x = Math.sin(this.clock * 0.3) * 2; this.camera.lookAt(0, 1.2, 0);
   }
+  // ------------------------------------------------------------ DEVELOPER MENU (F2 or `): jump to any zone, boss fight or map
+  toggleDevMenu() {
+    if (this.devOpen) { this.closeDevMenu(); return; }
+    this.devOpen = true; this.audio.setMusicDucked(true);
+    let el = document.getElementById('devmenu');
+    if (!el) {
+      el = document.createElement('div'); el.id = 'devmenu';
+      el.style.cssText = 'position:fixed;inset:4% 8%;z-index:1000;background:rgba(16,20,32,0.95);color:#eee;font:14px sans-serif;padding:18px 22px;overflow:auto;border:2px solid #f0c040;border-radius:12px;box-shadow:0 0 40px #000';
+      const btn = (text, fn, accent) => { const b = document.createElement('button'); b.textContent = text; b.style.cssText = `margin:3px;padding:6px 10px;border-radius:6px;border:1px solid #556;background:${accent || '#2a3350'};color:#fff;cursor:pointer;font:13px sans-serif`; b.onclick = (e) => { e.stopPropagation(); fn(); }; return b; };
+      const h = (t) => { const d = document.createElement('div'); d.textContent = t; d.style.cssText = 'margin:14px 0 6px;color:#f0c040;font-weight:bold'; return d; };
+      el.appendChild(Object.assign(document.createElement('div'), { innerHTML: '<b style="font-size:18px">Меню разработчика</b> &nbsp; <span style="color:#99a">F2 или ` — закрыть</span>' }));
+      const allBox = document.createElement('label'); allBox.style.cssText = 'display:block;margin-top:8px'; allBox.innerHTML = '<input type="checkbox" id="devAllOpen"> открыть все зоны на карте'; el.appendChild(allBox);
+      el.appendChild(h('Карты мира'));
+      el.appendChild(btn('Карта оригинала', () => this._devGo('map', '0'))); el.appendChild(btn('Карта «Громовержца»', () => this._devGo('map', 'K'))); el.appendChild(btn('Главное меню', () => { this.closeDevMenu(); this.gotoTitle(); }));
+      for (const [title, ids] of [['Оригинальная игра', ['0', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']], ['Новые приключения', ['K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U']]]) {
+        el.appendChild(h(title));
+        for (const id of ids) { if (!LEVELS[id]) continue; const row = document.createElement('div'); row.style.cssText = 'display:flex;align-items:center;gap:6px'; const name = document.createElement('span'); name.textContent = `«${ZONES[id].letter}» ${ZONES[id].name}`; name.style.cssText = 'min-width:260px'; row.appendChild(name); row.appendChild(btn('Уровень', () => this._devGo('level', id))); if (LEVELS[id].boss) row.appendChild(btn('Босс', () => this._devGo('boss', id), '#5a2a3a')); el.appendChild(row); }
+      }
+      document.body.appendChild(el);
+    }
+    el.style.display = 'block';
+  }
+  closeDevMenu() { this.devOpen = false; const el = document.getElementById('devmenu'); if (el) el.style.display = 'none'; this.audio.setMusicDucked(false); }
+  _devGo(what, id) {
+    this.closeDevMenu(); this.paused = false; this.hud.hideDialog(); this.hud.showMessage('');
+    const act = 'K' <= id && id <= 'U' ? 2 : 1; const map = MAPS[act]; const players = (this.session && this.session.players) || ['chip'];
+    this.session = { act, players, twoPlayer: !!(this.session && this.session.twoPlayer), current: what === 'map' ? map.start : id, cleared: {}, visited: {} };
+    const all = document.getElementById('devAllOpen'); if (all && all.checked) for (const k in map.nodes) this.session.cleared[k] = true;
+    if (what === 'map') { this.session.cleared[map.start] = true; this.gotoMap(); return; }
+    this.session.visited[id] = true; this.gotoLevel(id);
+    if (what === 'boss' && this.world) { const w = this.world, sp = w.level.spawns; if (!sp.boss) return;
+      for (const p of w.players) { p.x = w.level.original ? Math.floor(sp.boss.x / 16) * 16 + 2.5 : sp.boss.x - 6; p.y = sp.boss.y + 0.05; p.vx = 0; p.vy = 0; }
+      w.camBand = null; w.camInit = false; w.checkpoint = { x: w.players[0].x, y: w.players[0].y }; }
+  }
+
   // ------------------------------------------------------------ OPTIONS
   gotoOptions() { this.setState('options'); this.optSel = 0; this.hud.showMessage('НАСТРОЙКИ'); this.hud.setHelp('Вверх/вниз — пункт, влево/вправо или Z — изменить, Esc/B — назад'); this._showOptions(); }
   _optionItems() { return [`МОДЕЛИ ГЕРОЕВ: ${getHeroStyle() === 'old' ? 'ВСРАТЫЕ МОДЕЛИ' : 'КАК В МУЛЬТФИЛЬМЕ'}`, 'НАЗАД']; }
@@ -203,35 +239,39 @@ class Game {
   // ------------------------------------------------------------ MAP
   gotoMap() {
     this.clearScene(); this.setState('map'); const map = MAPS[this.session.act]; this.map = map;
-    this.scene.background = new THREE.Color(this.session.act === 1 ? '#1f3f78' : '#101c3a'); this.scene.fog = new THREE.Fog('#1f3f78', 30, 70);
-    const hemi = new THREE.HemisphereLight('#bcd', '#223', 0.8); const sun = new THREE.DirectionalLight('#fff', 1.0); sun.position.set(-5, 12, 8); sun.castShadow = true; this.scene.add(hemi, sun); this.decor.push(hemi, sun);
-    // city blocks grid
-    const r = (s) => { s = (s * 9301 + 49297) % 233280; return s / 233280; }; let seed = 7;
-    const ground = new THREE.Mesh(new THREE.BoxGeometry(60, 1, 30), new THREE.MeshStandardMaterial({ map: TEX.grass('#3a7a3a') })); ground.position.set(8, -0.5, 0.5); ground.receiveShadow = true; this.scene.add(ground); this.decor.push(ground);
-    for (let i = 0; i < 90; i++) { seed = seed * 9301 + 49297; const x = -6 + (seed % 233280) / 233280 * 30; seed = seed * 7 + 13; const z = -6 + (seed % 233280) / 233280 * 12; let tooClose = false; for (const id in map.nodes) { const n = map.nodes[id]; if (Math.hypot(n.x - x, -n.y - z) < 1.6) tooClose = true; } if (tooClose) continue; const h = 0.6 + ((seed >> 3) % 100) / 100 * 2.4; const b = new THREE.Mesh(new THREE.BoxGeometry(0.8, h, 0.8), new THREE.MeshStandardMaterial({ color: ['#c8b8a8', '#a8b8c8', '#d0c0a0', '#b0a090'][i % 4] })); b.position.set(x, h / 2, z); b.castShadow = true; this.scene.add(b); this.decor.push(b); }
-    // roads (edges)
-    this.mapNodes = {};
-    for (const [a, b] of map.edges) { const na = map.nodes[a], nb = map.nodes[b]; const dx = nb.x - na.x, dz = -(nb.y - na.y); const len = Math.hypot(dx, dz); const road = new THREE.Mesh(new THREE.BoxGeometry(len, 0.12, 0.5), new THREE.MeshStandardMaterial({ color: '#555' })); road.position.set((na.x + nb.x) / 2, 0.06, -(na.y + nb.y) / 2); road.rotation.y = -Math.atan2(dz, dx); this.scene.add(road); this.decor.push(road); }
-    for (const id in map.nodes) { const n = map.nodes[id]; const done = this.session.cleared[id]; const col = done ? '#40c060' : this.isUnlocked(id) ? '#ffd040' : '#777'; const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.8, 0.3, 16), new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.3 })); pad.position.set(n.x, 0.15, -n.y); this.scene.add(pad); this.decor.push(pad); const marker = makeItem(done ? 'star' : 'flower'); marker.position.set(n.x, 0.3, -n.y); marker.scale.setScalar(1.3); this.scene.add(marker); this.decor.push(marker); this.mapNodes[id] = { pad, marker, n }; }
-    // the Ranger Plane (player marker)
-    const plane = new THREE.Group(); plane.add(new THREE.Mesh(new THREE.SphereGeometry(0.35, 10, 8), mat('#e03030'))); const wing = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.06, 0.4), mat('#f0d060')); wing.position.y = 0.15; plane.add(wing); const bal = new THREE.Mesh(new THREE.SphereGeometry(0.5, 10, 8), mat('#60a0e0')); bal.position.y = 0.9; plane.add(bal); const pilot = RANGERS[this.session.players[0]](); pilot.scale.setScalar(0.45); pilot.position.y = 0.25; plane.add(pilot); this.scene.add(plane); this.decor.push(plane); this.plane = plane;
-    const cur = map.nodes[this.session.current]; plane.position.set(cur.x, 0.8, -cur.y); this.mapSel = this.session.current; this.planeT = 1;
-    this.hud.showMessage(map.title); this.hud.setHelp('Стрелки — выбрать соседнюю зону, Z/Enter — лететь. Жёлтые — доступны, зелёные — пройдены.');
+    this.scene.background = new THREE.Color('#1c4ea8'); this.scene.fog = null;
+    const hemi = new THREE.HemisphereLight('#ffffff', '#6a8a5a', 2.2); const sun = new THREE.DirectionalLight('#fff4e0', 1.6); sun.position.set(-4, 14, 10); sun.target.position.set(8, 0, 8); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); const sc = sun.shadow.camera; sc.left = -14; sc.right = 14; sc.top = 14; sc.bottom = -14;
+    this.scene.add(hemi, sun, sun.target); this.decor.push(hemi, sun, sun.target);
+    for (const id in map.nodes) if (!map.nodes[id].label && !map.nodes[id].logo) map.nodes[id].label = ZONES[id].letter;
+    if (!map.nodes[this.session.current]) this.session.current = map.start;
+    this.wm = buildWorldMap(this.scene, map, { current: this.session.current, pilot: this.session.players[0] }); this.decor.push(this.wm.root); this.wm.plane.scale.setScalar(1.35);
+    this.mapSel = this.session.current; this.mapFly = null; this._refreshSigns();
+    this.camera.position.set(8, 19, 15.5); this.camera.lookAt(8, 0, 7.2);
+    this.hud.showMessage(''); this.hud.setHelp('Стрелки/крестовина — лететь по дорожке, Z/Enter или A — войти в зону, Esc — меню. F2 — меню разработчика.');
     this.audio.playMusic(MUSIC.map); this._mapHint();
   }
+  _refreshSigns() { for (const id in this.wm.signs) { const sg = this.wm.signs[id]; const open = this.isUnlocked(id) || this.session.cleared[id]; sg.flag.visible = !!this.session.cleared[id] && !this.map.nodes[id].logo; sg.group.scale.setScalar(open ? 1 : 0.8); sg.board.traverse(o => { if (o.material && 'opacity' in o.material && o.material.map) { o.material.opacity = open ? 1 : 0.45; } }); } }
   isUnlocked(id) { const map = MAPS[this.session.act]; if (id === map.start) return true; return map.edges.some(([a, b]) => (b === id && this.session.cleared[a]) || (a === id && this.session.cleared[b])); }
   neighbors(id) { const map = this.map; const out = []; for (const [a, b] of map.edges) { if (a === id) out.push(b); if (b === id) out.push(a); } return out; }
-  _mapHint() { const z = ZONES[this.mapSel]; this.hud.setZone(`Зона «${z.letter}»: ${z.name}` + (this.session.cleared[this.mapSel] ? ' ✓' : '')); this.hud.showDialog('Гайка', ZONE_HINTS[this.mapSel] || ''); }
+  _mapHint() { const z = ZONES[this.mapSel]; const start = this.map.nodes[this.mapSel] && this.map.nodes[this.mapSel].logo && this.session.cleared[this.mapSel]; this.hud.setZone(start ? 'Штаб Спасателей' : `Зона «${z.letter}»: ${z.name}` + (this.session.cleared[this.mapSel] ? ' ✓' : '')); if (!start) this.hud.showDialog('Гайка', ZONE_HINTS[this.mapSel] || ''); else this.hud.hideDialog(); }
   updateMap(dt) {
-    const m = this.menu(); const map = this.map; const cur = map.nodes[this.mapSel];
-    const pick = (dirx, diry) => { let best = null, bd = 1e9; for (const n of this.neighbors(this.mapSel).concat(Object.keys(map.nodes))) { if (n === this.mapSel) continue; const p = map.nodes[n]; const dx = p.x - cur.x, dy = p.y - cur.y; const dot = dx * dirx + dy * diry; if (dot <= 0.3) continue; if (!this.isUnlocked(n)) continue; const d = Math.hypot(dx, dy) - dot * 0.5; if (d < bd) { bd = d; best = n; } } return best; };
-    let nxt = null; if (m.left) nxt = pick(-1, 0); if (m.right) nxt = pick(1, 0); if (m.up) nxt = pick(0, 1); if (m.down) nxt = pick(0, -1);
-    if (nxt) { this.mapSel = nxt; this.audio.playSfx(SFX.menuMove); this._mapHint(); }
-    if (m.ok && this.isUnlocked(this.mapSel)) { this.audio.playSfx(SFX.menuOk); this.session.current = this.mapSel; this.hud.hideDialog(); this.gotoLevel(this.mapSel); return; }
-    if (m.back) { this.gotoTitle(); return; }
-    const target = map.nodes[this.mapSel]; const p = this.plane.position; p.x += (target.x - p.x) * dt * 4; p.z += (-target.y - p.z) * dt * 4; p.y = 0.8 + Math.sin(this.clock * 3) * 0.1; this.plane.rotation.y = Math.atan2(target.x - p.x, -target.y - p.z);
-    for (const id in this.mapNodes) { const mn = this.mapNodes[id]; animateItem(mn.marker, this.clock); mn.pad.scale.setScalar(id === this.mapSel ? 1.3 + Math.sin(this.clock * 6) * 0.1 : 1); }
-    this.camera.position.set(p.x, 7.5, p.z + 9); this.camera.lookAt(p.x, 0, p.z - 1);
+    const m = this.menu(); const wm = this.wm; const plane = wm.plane;
+    if (this.mapFly) { // fly along the path polyline
+      const f = this.mapFly; f.d += dt * 7; let d = f.d, i = 0; while (i < f.pts.length - 1 && d > f.pts[i].distanceTo(f.pts[i + 1])) { d -= f.pts[i].distanceTo(f.pts[i + 1]); i++; }
+      if (i >= f.pts.length - 1) { const e = f.pts[f.pts.length - 1]; plane.position.x = e.x; plane.position.z = e.z; this.mapSel = f.to; this.mapFly = null; this._mapHint(); }
+      else { const a = f.pts[i], b = f.pts[i + 1]; const t = d / a.distanceTo(b); plane.position.x = a.x + (b.x - a.x) * t; plane.position.z = a.z + (b.z - a.z) * t; const yaw = -Math.atan2(b.z - a.z, b.x - a.x); plane.rotation.y += ((yaw - plane.rotation.y + Math.PI * 3) % (Math.PI * 2) - Math.PI) * Math.min(1, dt * 10); }
+    } else {
+      const dir = m.left ? [-1, 0] : m.right ? [1, 0] : m.up ? [0, -1] : m.down ? [0, 1] : null;
+      if (dir) { let best = null, bd = 0.5;
+        for (const path of this.map.paths) { if (path.a !== this.mapSel && path.b !== this.mapSel) continue; const to = path.a === this.mapSel ? path.b : path.a; if (!this.isUnlocked(to) && !this.session.cleared[to]) continue;
+          const pts = (path.a === this.mapSel ? path.pts : path.pts.slice().reverse()).map(([x, y]) => wm.P(x, y)); let k = 1; while (k < pts.length - 1 && pts[k].distanceTo(pts[0]) < 0.01) k++; const v = pts[k].clone().sub(pts[0]).normalize(); const dot = v.x * dir[0] + v.z * dir[1]; if (dot > bd) { bd = dot; best = { to, pts }; } }
+        if (best) { this.mapFly = { to: best.to, pts: best.pts, d: 0 }; this.audio.playSfx(SFX.menuMove); this.hud.hideDialog(); } }
+      if (m.ok && this.isUnlocked(this.mapSel) && !this.map.nodes[this.mapSel].logo) { this.audio.playSfx(SFX.menuOk); this.session.current = this.mapSel; this.hud.hideDialog(); this.gotoLevel(this.mapSel); return; }
+      if (m.ok && this.map.nodes[this.mapSel].logo && !this.session.cleared[this.mapSel]) { this.session.current = this.mapSel; this.gotoLevel(this.mapSel); return; }
+      if (m.back) { this.gotoTitle(); return; }
+    }
+    plane.position.y = 1.7 + Math.sin(this.clock * 2.5) * 0.12; plane.rotation.z = Math.sin(this.clock * 1.7) * 0.05;
+    for (const id in wm.signs) { const sg = wm.signs[id]; sg.board.rotation.z = id === this.mapSel && !this.mapFly ? Math.sin(this.clock * 6) * 0.05 : 0; }
   }
 
   // ------------------------------------------------------------ LEVEL
@@ -276,7 +316,7 @@ class Game {
   onLevelClear() {
     const id = this.currentLevelId; this.session.cleared[id] = true; this.audio.stopMusic(); this.audio.playJingle(MUSIC.clear, () => { });
     this.hud.showMessage('ЗОНА ПРОЙДЕНА!');
-    setTimeout(() => { if (this.state !== 'level') return; this.gotoBonus(() => this._afterLevel(id)); }, 2600);
+    setTimeout(() => { if (this.state !== 'level') return; if (this.session.act === 1) this._afterLevel(id); else this.gotoBonus(() => this._afterLevel(id)); }, 2600); /* the NES game goes from the boss straight to the story and the map */
   }
   _afterLevel(id) {
     const def = LEVELS[id]; const map = MAPS[this.session.act];
@@ -332,7 +372,7 @@ class Game {
     if (this.input.pressedViewToggle) { this.widescreen = !this.widescreen; this.toast(this.widescreen ? 'Широкий кадр' : 'Кадр как на NES (16:15)'); }
     if (this.state === 'loading' && this.ready && this._startFn && this.input.padAnyPressed) this._startFn();
     this.frames = (this.frames || 0) + 1;
-    switch (this.state) {
+    if (!this.devOpen) switch (this.state) {
       case 'title': this.updateTitle(dt); break;
       case 'controls': if (this.menu().ok || this.menu().back) this.gotoTitle(); break;
       case 'soundtest': this.updateSoundTest(); break;
@@ -370,3 +410,4 @@ class Game {
 }
 
 window.game = new Game();
+window.addEventListener('keydown', (e) => { if (e.code === 'F2' || e.code === 'Backquote') { e.preventDefault(); window.game.toggleDevMenu(); } }); /* developer menu */

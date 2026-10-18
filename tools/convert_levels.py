@@ -286,7 +286,8 @@ def convert(name):
                 doors=[dict(x=d['cells'][0][0], y=min(c[1] for c in d['cells']), h=len(d['cells']), dest=d['dest'], edge=bool(d.get('edge')), lock=d.get('lock')) for d in doors],
                 kinds=[k for k, _ in sorted(kind_ids.items(), key=lambda kv: kv[1])], kcells=kcells if kind_ids else None,
                 extra=extra, bossScreen=list(boss_screen) if boss_screen else None,
-                sky=sky_col, skyId=sky_id, screens=[W, H], route=[list(k) for k in dist])
+                sky=sky_col, skyId=sky_id, screens=[W, H], scrolls=scrolls,  # per-screen scroll byte: 0x80 = the camera never scrolls up from this screen
+                route=[list(k) for k in dist])
 
 levels = {n: convert(n) for n in NAMES}
 from PIL import Image, ImageDraw

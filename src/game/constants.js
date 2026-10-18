@@ -28,7 +28,7 @@ export const ENEMY_CHARS = {
 };
 
 export const MUSIC = {
-  title: 'title', map: 'map', boss: 'boss', bonus: 'bonus', gadget: 'gadget',
+  title: 'title', map: 'bonus', boss: 'boss', bonus: 'map', /* NES: song 9 plays on the map screen, song 8 is the bonus tune */ gadget: 'gadget',
   zone0: 'zone0', zoneA: 'zoneA', zoneB: 'zoneB', zoneD: 'zoneD', zoneF: 'zoneF', zoneG: 'zoneG', zoneJ: 'zoneJ',
   clear: 'clear', death: 'death', gameover: 'gameover',
 };

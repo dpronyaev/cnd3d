@@ -32,25 +32,36 @@ export const ZONES = {
 };
 
 // ------------------------------------------------------------------ world map: nodes with positions (map units) and edges
+// World maps. Act I reproduces the NES map screen after zone 0 (signposts and paths at their screen-pixel positions, 256x240):
+// RR = where the Rangers start, А..Ж = zones A..G. Zones H-J (З, И, К) lie beyond the sea strip at the top.
+const L = (a, b, pts) => ({ a, b, pts });
+const lpath = (na, nb) => [[na.px, na.py], [nb.px, na.py], [nb.px, nb.py]]; // right-angle path like on the NES map
+function finishMap(m) { m.edges = m.paths.map(p => [p.a, p.b]); return m; }
+const ACT2_NODES = { K: [1, 1], L: [3, 2.4], M: [3.5, -0.2], N: [5.5, 1.2], O: [7.5, 0], P: [7.5, 2.5], Q: [9.5, 2.6], R: [9.5, 0], S: [11.5, 1.2], T: [13.5, 2.3], U: [15.5, 1] };
+const act2Nodes = Object.fromEntries(Object.entries(ACT2_NODES).map(([k, [x, y]]) => [k, { px: Math.round(12 + x * 14), py: Math.round(206 - y * 44), label: null, logo: k === 'K' }]));
 export const MAPS = {
-  1: {
-    title: 'КАРТА ГОРОДА',
+  1: finishMap({
+    title: 'КАРТА', seaPy: 64,
     nodes: {
-      '0': { x: 1, y: 1 }, 'A': { x: 3, y: 2.2 }, 'B': { x: 5, y: 1 }, 'C': { x: 7, y: 2.4 }, 'D': { x: 7, y: 0 }, 'E': { x: 9, y: 2.6 }, 'F': { x: 9, y: 0.2 }, 'G': { x: 11, y: 1.3 },
-      'H': { x: 13.5, y: 0.4 }, 'I': { x: 15, y: 2.2 }, 'J': { x: 17, y: 1 },
+      '0': { px: 217, py: 88, logo: true }, 'A': { px: 217, py: 152, label: 'А' }, 'B': { px: 168, py: 88, label: 'Б' }, 'C': { px: 168, py: 200, label: 'В' },
+      'D': { px: 136, py: 135, label: 'Г' }, 'E': { px: 88, py: 88, label: 'Д' }, 'F': { px: 88, py: 135, label: 'Е' }, 'G': { px: 40, py: 152, label: 'Ж' },
+      'H': { px: 40, py: 36, label: 'З' }, 'I': { px: 128, py: 30, label: 'И' }, 'J': { px: 216, py: 36, label: 'К' },
     },
-    edges: [['0', 'A'], ['A', 'B'], ['B', 'C'], ['B', 'D'], ['C', 'E'], ['D', 'F'], ['C', 'F'], ['D', 'E'], ['E', 'G'], ['F', 'G'], ['G', 'H'], ['H', 'I'], ['H', 'J'], ['I', 'J']],
+    paths: [
+      L('0', 'B', [[217, 88], [168, 88]]), L('0', 'A', [[217, 88], [217, 152]]), L('A', 'C', [[217, 152], [217, 197], [168, 197], [168, 200]]),
+      L('B', 'C', [[168, 88], [168, 200]]), L('D', 'B', [[136, 135], [168, 135], [168, 88]]), L('D', 'C', [[136, 135], [168, 135], [168, 200]]),
+      L('E', 'D', [[88, 88], [136, 88], [136, 135]]), L('E', 'F', [[88, 88], [88, 135]]), L('F', 'D', [[88, 135], [136, 135]]),
+      L('F', 'G', [[88, 135], [88, 195], [40, 195], [40, 152]]),
+      L('G', 'H', [[40, 152], [40, 36]]), L('H', 'I', [[40, 36], [128, 36], [128, 30]]), L('H', 'J', [[40, 36], [40, 20], [216, 20], [216, 36]]), L('I', 'J', [[128, 30], [128, 36], [216, 36]]),
+    ],
     start: '0', final: 'J',
-  },
-  2: {
-    title: 'КАРТА: ОПЕРАЦИЯ «ГРОМОВЕРЖЕЦ»',
-    nodes: {
-      'K': { x: 1, y: 1 }, 'L': { x: 3, y: 2.4 }, 'M': { x: 3.5, y: -0.2 }, 'N': { x: 5.5, y: 1.2 }, 'O': { x: 7.5, y: 0 }, 'P': { x: 7.5, y: 2.5 }, 'Q': { x: 9.5, y: 2.6 }, 'R': { x: 9.5, y: 0 },
-      'S': { x: 11.5, y: 1.2 }, 'T': { x: 13.5, y: 2.3 }, 'U': { x: 15.5, y: 1 },
-    },
-    edges: [['K', 'L'], ['K', 'M'], ['L', 'N'], ['M', 'N'], ['N', 'O'], ['N', 'P'], ['O', 'R'], ['P', 'Q'], ['O', 'Q'], ['P', 'R'], ['Q', 'S'], ['R', 'S'], ['S', 'T'], ['T', 'U']],
+  }),
+  2: finishMap({
+    title: 'КАРТА: ОПЕРАЦИЯ «ГРОМОВЕРЖЕЦ»', seaPy: 40,
+    nodes: act2Nodes,
+    paths: [['K', 'L'], ['K', 'M'], ['L', 'N'], ['M', 'N'], ['N', 'O'], ['N', 'P'], ['O', 'R'], ['P', 'Q'], ['O', 'Q'], ['P', 'R'], ['Q', 'S'], ['R', 'S'], ['S', 'T'], ['T', 'U']].map(([a, b]) => L(a, b, lpath(act2Nodes[a], act2Nodes[b]))),
     start: 'K', final: 'U',
-  },
+  }),
 };
 
 // ------------------------------------------------------------------ cutscenes

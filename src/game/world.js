@@ -233,7 +233,7 @@ export class World {
       const lead = alive.length ? alive[0] : this.players[0];
       const band = Math.floor((this.level.height - 1 - (lead.y + 0.6)) / 16); // screen row index (0 = top)
       if (this.camBand == null) this.camBand = band;
-      if (band !== this.camBand) { const inBand = (this.level.height - 1 - lead.y) - band * 16; if (inBand > 1.5 && inBand < 14.5) this.camBand = band; }
+      if (band !== this.camBand) { const inBand = (this.level.height - 1 - lead.y) - band * 16; const sw = this.def.screens && this.def.screens[0], sb = this.def.scrolls && sw ? this.def.scrolls[this.camBand * sw + Math.floor(lead.x / 16)] : 0; const upLocked = band < this.camBand && (sb & 0x80); /* NES scroll flag: no scrolling up from this screen */ if (inBand > 1.5 && inBand < 14.5 && !upLocked) this.camBand = band; }
       ty = this.level.height - this.camBand * 16 - 7.5; // NES shows the top 240 of the 256 px of a screen: 15 rows
       const halfW = 8; if (isFinite(this.camLockL)) tx = (this.camLockL + this.camLockR) / 2; tx = Math.max(halfW, Math.min(this.level.width - halfW, tx));
       const route = this.def.route; if (route && !isFinite(this.camLockL)) { /* NES: the camera only scrolls over real screens of this row */
