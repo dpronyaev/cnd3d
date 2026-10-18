@@ -138,7 +138,7 @@ class Game {
 
   // ------------------------------------------------------------ OPTIONS
   gotoOptions() { this.setState('options'); this.optSel = 0; this.hud.showMessage('НАСТРОЙКИ'); this.hud.setHelp('Вверх/вниз — пункт, влево/вправо или Z — изменить, Esc/B — назад'); this._showOptions(); }
-  _optionItems() { return [`МОДЕЛИ ГЕРОЕВ: ${getHeroStyle() === 'old' ? 'ВСРАТЫЕ МОДЕЛИ' : 'КАК В МУЛЬТФИЛЬМЕ'}`, 'НАЗАД']; }
+  _optionItems() { return [`МОДЕЛИ ГЕРОЕВ: ${getHeroStyle() === 'old' ? 'ВСРАТЫЕ МОДЕЛИ' : 'КАК В МУЛЬТФИЛЬМЕ'}`, `МУЗЫКА: ${this.audio.style === 'metal' ? 'МЕТАЛЛ' : 'ОРИГИНАЛ (NES)'}`, 'НАЗАД']; }
   _showOptions() { this.hud.showMenu(this._optionItems(), this.optSel); }
   updateOptions() {
     const m = this.menu(); const n = this._optionItems().length;
@@ -146,6 +146,7 @@ class Game {
     if (m.down) { this.optSel = (this.optSel + 1) % n; this.audio.playSfx(SFX.menuMove); }
     if (m.back || (m.ok && this.optSel === n - 1)) { this.audio.playSfx(SFX.menuOk); this.gotoTitle(); return; }
     if (this.optSel === 0 && (m.ok || m.left || m.right)) { setHeroStyle(getHeroStyle() === 'old' ? 'cartoon' : 'old'); this.audio.playSfx(SFX.menuOk); this._rebuildTitleActors(); }
+    if (this.optSel === 1 && (m.ok || m.left || m.right)) { this.audio.setStyle(this.audio.style === 'metal' ? 'original' : 'metal'); this.audio.playSfx(SFX.menuOk); } /* music: NES instruments or metal cover */
     this._showOptions(); this.camera.position.x = Math.sin(this.clock * 0.3) * 2; this.camera.lookAt(0, 1.2, 0);
   }
   _rebuildTitleActors() { for (const d of this.decor.filter(d => d.userData.actor)) this.scene.remove(d); this.decor = this.decor.filter(d => !d.userData.actor); this._titleActors(); }
